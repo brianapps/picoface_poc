@@ -1,0 +1,24 @@
+GAL22V10
+22V10
+
+X0 X1 X2 X3 Y0 Y1 Y2 Y3 A14 A15 FLTE GND
+XE  /MREQ /RD /WR FLTHI FLTLO /PICOREQ O3 O2 O1 O0 VCC
+
+
+O0 = X0 * XE + Y0 * /XE
+O1 = X1 * XE + Y1 * /XE
+O2 = X2 * XE + Y2 * /XE
+O3 = X3 * XE + Y3 * /XE
+FLTLO.T = GND
+FLTLO.E = FLTE
+
+FLTHI.T = VCC
+FLTHI.E = FLTE
+
+PICOREQ = /A14*/A15*MREQ*RD*/WR + /A14*/A15*MREQ*WR*/RD
+
+DESCRIPTION
+Quad 2-to-1 address line multiplexer along with logic determine
+when ZX Spectrum is accessing the ROM -- which happens when
+the lower 16KB is accessed (A14 and A15 and /MREQ are both low) and
+either the Read (/RD is low) or write (/WR is low) occurs.

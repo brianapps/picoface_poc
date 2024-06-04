@@ -1,0 +1,13 @@
+# file opened: demo.asm
+ 1    0000                  org 34000
+ 2    84D0
+ 3    84D0               ;   ld hl, 785
+ 4    84D0                ;  ld (hl), 12
+ 5    84D0                ;  ret
+ 6    84D0
+ 7    84D0 21 00 80         ld hl, 32768
+ 8    84D3 11 FD 7F         ld de, 32765
+ 9    84D6 01 00 04         ld bc, 1024
+10    84D9 ED B0            ldir
+11    84DB C9               ret
+# file closed: demo.asm
