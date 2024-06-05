@@ -17,7 +17,7 @@
     WAIT 1 GPIO PIN_PICOREQ SIDE 1 [15]
 .wrap_target
     WAIT 0 GPIO PIN_PICOREQ SIDE 1 
-    IN PINS, 7 SIDE 0 [10]
+    IN PINS, 7 SIDE 0 [6]
     IN PINS, 25 SIDE 0 
     PUSH SIDE 1
     WAIT 1 GPIO PIN_PICOREQ SIDE 1 [1]
@@ -39,39 +39,3 @@
 .wrap
 
 
-.program flash
-.wrap_target
-    PULL
-    OUT PINS, 8
-    MOV OSR, ~NULL
-    OUT PINDIRS, 8
-    PULL
-    MOV OSR, NULL
-    OUT PINDIRS, 8
-.wrap
-
-
-
-; disable the rom for one memory fetch
-.program disablerom
-.wrap_target
-    PULL 
-    SET PINS, 1
-    WAIT 1 GPIO PIN_PICOREQ [15]
-    SET PINS, 0
-.wrap
-
-
-
-% c-sdk {
-// this is a raw helper function for use by the user which sets up the GPIO output, and configures the SM to output on a particular pin
-/*
-void blink_program_init(PIO pio, uint sm, uint offset, uint pin) {
-   pio_gpio_init(pio, pin);
-   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
-   pio_sm_config c = blink_program_get_default_config(offset);
-   sm_config_set_set_pins(&c, pin, 1);
-   pio_sm_init(pio, sm, offset, &c);
-}
-*/
-%}

@@ -116,4 +116,17 @@ OK we need this:
 And can remove the disable rom program and configure the set pins for putdata to be
 the romcs line.
 
+## 5 Jun 2024
+
+Issues with the rom interception only working 2nd time around persisted despite tweaking PIO
+routines. In the end I tried `cmake -DPICO_NO_FLASH=1` and that seemed to fix it.
+
+It would appear that some loading/running from flash was interfering. In the end just making
+the key function run from RAM fixed things. e.g. with
+
+```
+void __time_critical_func(do_my_pio)() {
+    ...
+}
+```
 
