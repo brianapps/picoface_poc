@@ -130,3 +130,11 @@ void __time_critical_func(do_my_pio)() {
 }
 ```
 
+## 6 Jun 2024
+
+Managed to get the pico to perform ROM switching. Though things aren't without
+issues. I can't get the FGH rom to work and dumping the gosh one has failed.
+
+
+
+

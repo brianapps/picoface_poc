@@ -39,7 +39,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom picorom.c )
+add_executable(picorom picorom.c rom.c)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")
@@ -64,6 +64,8 @@ target_include_directories(picorom PRIVATE
 # Add any user requested libraries
 target_link_libraries(picorom 
         hardware_pio
+        pico_multicore
+        
         )
 
 pico_add_extra_outputs(picorom)

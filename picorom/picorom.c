@@ -1,11 +1,34 @@
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
+#include "pico/util/queue.h"
 #include "hardware/pio.h"
 
 #include "blink.pio.h"
 
+extern const uint8_t FGH_ROM[];
+extern const uint32_t FGH_ROM_SIZE;
 
+// multiplexed address pins
+const uint8_t PIN_MA0 = 2;
+const uint8_t PIN_MA1 = 3;
+const uint8_t PIN_MA2 = 4;
+const uint8_t PIN_MA3 = 5;
+const uint8_t PIN_MA4 = 6;
+const uint8_t PIN_MA5 = 7;
+const uint8_t PIN_MA6 = 8;
+const uint8_t PIN_NOT_M1 = 9;
+const uint8_t PIN_NOT_WR = 10;
 const uint8_t PIN_D0 = 11;
+const uint8_t PIN_D1 = 12;
+const uint8_t PIN_D2 = 13;
+const uint8_t PIN_D3 = 14;
+const uint8_t PIN_D4 = 15;
+const uint8_t PIN_D5 = 16;
+const uint8_t PIN_D6 = 17;
+const uint8_t PIN_D7 = 18;
+
 const uint8_t PIN_RESET = 19;
 
 // set high to disable rom.
@@ -16,15 +39,21 @@ const uint8_t PIN_CSROM = 20;
 const uint8_t PIN_PICOREQ = 21;
 const uint8_t PIN_XE = 22;
 
+const uint8_t PIN_USER_SWITCH = 26;
 
 const uint MY_SM = 0;
 const uint SM_OUTDATA = 1;
 
+uint8_t romdata[32768];
+volatile bool romenabled = false;
+
+static queue_t eventqueue;
+
 
 void __time_critical_func(do_my_pio)() {
-    gpio_init(PIN_RESET);
-    gpio_put(PIN_RESET, false);
-    gpio_set_dir(PIN_RESET, true);
+    // gpio_init(PIN_RESET);
+    // gpio_put(PIN_RESET, false);
+    // gpio_set_dir(PIN_RESET, true);
 
     
     PIO pio = pio0;
@@ -83,43 +112,108 @@ void __time_critical_func(do_my_pio)() {
         // 3 Normal read        
         uint8_t access = (addr >> 14) & 3;
 
-        if ((access == 3 || access == 2) && romaddr == myaddr) {
-            //pio_sm_put(pio, SM_CSROM, 0);
-            pio_sm_put(pio, SM_OUTDATA, c);
-            //c++;
-        } else if (access == 1 && romaddr == myaddr) {
-            c = (addr >> 16) & 0xFF;
+        if (romenabled) {
+            if (access == 3 || access == 2) {
+                pio_sm_put(pio, SM_OUTDATA, romdata[romaddr]);
+            }
         }
+        else {
 
-        if (access == 2) {
-            lastm1 = romaddr;
-        } else if (access == 1 && romaddr > 16) // ignore writes to lower access because these happen normally
-        {
-            // uint8_t writeval = (addr >> 16) & 0xFF;
-            // printf("Write at = %d to %d, 0x%X, lastm1 = %X\n", 
-            //     romaddr, writeval, addr, lastm1);
-            if (romaddr == 1234) {
-                printf("Resetting\n");
-                gpio_put(PIN_RESET, true);
-                sleep_ms(3);
-                gpio_put(PIN_RESET, false);
+            if ((access == 3 || access == 2) && romaddr == myaddr) {
+                //pio_sm_put(pio, SM_CSROM, 0);
+                pio_sm_put(pio, SM_OUTDATA, c);
+                //c++;
+            } else if (access == 1 && romaddr == myaddr) {
+                c = (addr >> 16) & 0xFF;
             }
 
+            if (access == 2) {
+                lastm1 = romaddr;
+            } else if (access == 1 && romaddr > 16) // ignore writes to lower access because these happen normally
+            {
+                // uint8_t writeval = (addr >> 16) & 0xFF;
+                // printf("Write at = %d to %d, 0x%X, lastm1 = %X\n", 
+                //     romaddr, writeval, addr, lastm1);
+                if (romaddr == 1234) {
+                    printf("Resetting\n");
+                    // gpio_put(PIN_RESET, true);
+                    // sleep_ms(3);
+                    // gpio_put(PIN_RESET, false);
+                }
+
+            }
         }
 
-        
-
-        // if (romaddr == 8191) {
-        //     printf("Access %X, (%d), lastm1 = %X\n", addr, access, lastm1);
-        // }            
     }
+}
+
+int64_t alarm_switch_debounce(alarm_id_t id, void* user_data) {
+    bool isup = gpio_get(PIN_USER_SWITCH);
+    if (!isup) {
+        printf("Switching the rom now\n");
+        uint8_t data = 1;
+        queue_add_blocking(&eventqueue, &data);
+        // memcpy(romdata, FGH_ROM, FGH_ROM_SIZE);
+        // //romenabled = true;
+        // printf("Resetting\n");
+        // gpio_put(PIN_RESET, true);
+        // sleep_ms(3);
+        // // gpio_put(PIN_RESET, false);
+    }
+    
+    return 0;
+}
+
+void user_switch_interrupt() {
+    uint8_t data = 1;
+    queue_add_blocking(&eventqueue, &data);
 }
 
 
 int main() {
     stdio_init_all();
-    sleep_ms(100);
-    printf("Started\n");
-    do_my_pio();
+
+    queue_init(&eventqueue, 1, 16);
+
+
+
+
+    multicore_launch_core1(do_my_pio);
+
+    gpio_init(PIN_USER_SWITCH);
+    gpio_set_dir(PIN_USER_SWITCH, false);
+    gpio_pull_up(PIN_USER_SWITCH);
+    gpio_set_irq_enabled_with_callback(PIN_USER_SWITCH, GPIO_IRQ_EDGE_FALL, true, user_switch_interrupt);
+
+    gpio_init(PIN_RESET);
+    gpio_put(PIN_RESET, false);
+    gpio_set_dir(PIN_RESET, true);    
+
+    sleep_ms(1000);
+    printf("Started %d\n", FGH_ROM_SIZE);
+
+    uint32_t c = 0;
+
+
+    while (true) {
+        uint8_t event;
+        queue_remove_blocking(&eventqueue, &event);
+        printf("Queue popped %d\n", event);
+        sleep_ms(2);
+
+        bool isup = gpio_get(PIN_USER_SWITCH);
+        if (!isup) {
+            printf("Switching ROM now..\n");
+            memcpy(romdata, FGH_ROM, FGH_ROM_SIZE);
+            romdata[5433] = 'a' + c % 32;
+            c++;
+            romenabled = !romenabled;
+            printf("Resetting %d\n", romenabled);
+            gpio_put(PIN_RESET, true);
+            sleep_ms(3);
+            gpio_put(PIN_RESET, false);        
+        }
+    }
+    
 }
 

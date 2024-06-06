@@ -13,8 +13,6 @@
 
 .program fetchaddr
 .side_set 1
-    WAIT 0 GPIO PIN_PICOREQ SIDE 1 [15]
-    WAIT 1 GPIO PIN_PICOREQ SIDE 1 [15]
 .wrap_target
     WAIT 0 GPIO PIN_PICOREQ SIDE 1 
     IN PINS, 7 SIDE 0 [6]
@@ -25,7 +23,6 @@
 
 
 .program putdata
-    SET PINS, 0    
 .wrap_target
     PULL
     SET PINS, 1
