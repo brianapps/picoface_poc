@@ -1,6 +1,7 @@
 
+import sys
 
-with open("gw03.rom", "rb") as fp:
+with open(sys.argv[1], "rb") as fp:
     romdata = fp.read()
 
 print('#include "pico/stdlib.h"\n')

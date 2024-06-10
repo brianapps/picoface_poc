@@ -135,6 +135,15 @@ void __time_critical_func(do_my_pio)() {
 Managed to get the pico to perform ROM switching. Though things aren't without
 issues. I can't get the FGH rom to work and dumping the gosh one has failed.
 
+## 10 Jun 2024
 
+I think the FGH rom switching was down to me modifying the copyright symbol
+in the gosh rom. However timings are very tight.
+
+Spent quite a while trying to optimise the rom handling routine and implemented something in assembler to ensure the pico responds quickly enough.
+
+Spent an age this morning trying to trace down intermittent faults, e.g. press space causing crashes in the gosh rom. I retraced my steps without success until I realised the edge connector wasn't properly pulled in!
+
+Enabled autopush on the address reading state machine to save a cycle.
 
 

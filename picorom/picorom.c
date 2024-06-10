@@ -44,10 +44,117 @@ const uint8_t PIN_USER_SWITCH = 26;
 const uint MY_SM = 0;
 const uint SM_OUTDATA = 1;
 
-uint8_t romdata[32768];
-volatile bool romenabled = false;
 
 static queue_t eventqueue;
+
+
+struct MYSTATE {
+    uint32_t flags;
+    uint32_t nmi_active;
+};
+
+volatile struct MYSTATE rom_state = {0, 0};
+volatile bool romenabled = false;
+uint8_t rom_data[32768];
+
+
+void __time_critical_func(abcdemo)() {
+    //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
+    //register unsigned nmi_entry __asm("r11") = (1 << 14 | 0x66) << 17;
+    // r9 holds previous romstate
+    // r8 holds nmiexit address shifted, or 1 if disabled
+    asm(
+    "   mov r0, #1\n"
+    "   mov r8, r0\n"
+    "   mov r4, %[rom_data]\n"
+    "main_loop:\n"
+    "   ldr r1,=%[addr_mask]\n"
+    "check_empty:\n"
+    "   ldr r0, [ %[base], %[fstat_offset]]\n"
+    "   lsr r0, r0, %[rx0empty_shift]\n"
+    "   bcs check_empty\n"
+    "   ldr r0, [ %[base], %[sm0_rx_offset]]\n"   // r0 now holds data and address
+    "   and r1, r0, r1\n"               // r1 now holds just address
+    "   lsl r2, r0, #17\n"                        // carry flag holds if was a read
+    "   bcc write_op\n"
+    "   ldr r3, [ %[rom_state], #0]\n"            // r3 holds rom_sate
+    "   lsr r3, r3, #1\n"                         // CC is set if rom enable, zero flag is NMI check is enabled
+    "   bcc read_rom_disabled\n"
+    "   beq send_data\n"
+    "   cmp r2, %[nmiaddr]\n"
+    "   beq activate_nmi\n"
+    "send_data:\n"
+    "   ldrb r0, [r4, r1]\n"
+    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"
+    // Check if have reached the exit point of the nmi routine
+    "   cmp r2, r8\n"
+    "   bne main_loop\n"
+
+    // leaving nmi rom now
+    "   mov r0, r9\n"
+    "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what is was prior to entering the nmi routine
+    "   mov r0, #1\n"                      // r8 is set to an invalid shifted address so we have effectively disabled
+    "   mov r8, r1\n"                      // the nmi exit check
+    "   mov r4, %[rom_data]\n"             // Restore the rom address to the normal rom, regardless of whether the rom is enabled or not
+    // And need to set a variable to say we aren't in the nmi anymore
+    "   mov r0, #0\n"
+    "   str r0, [%[rom_state], #4]\n"    // no longer in nmi
+    "   b main_loop\n"
+
+
+    "activate_nmi:\n"
+    "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
+    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
+    "   mov r0, #1\n"
+    "   mov r9, r0\n"                            // previous romstate was enabled
+    "   str r0, [%[rom_state], #4]\n"            // nmi routine is now active
+    "   str r0, [%[rom_state], #0]\n"            // rom is enabled, because it is the nmi rom
+    "   mov r8, %[nmiexit]\n"                    // and set r8 to nmi exit address
+    "   ldr r4, =%[rom_data_nmi]\n"
+    "   b main_loop\n"
+
+    "read_rom_disabled:\n"
+    "   beq main_loop\n"   // zero if nmi check is not required
+    "   cmp r2, %[nmiaddr]\n"
+    "   bne main_loop\n"
+    "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
+    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
+    "   mov r9, r0\n"                            // previous romstate was disabled
+    "   mov r1, #1\n"
+    "   str r1, [%[rom_state], #4]\n"            // we are now in nmi routine
+    "   str r1, [%[rom_state], #0]\n"            // and the rom is enabled
+    "   mov r8, %[nmiexit]\n"                    // and set r8 to nmi exit address
+    "   mov r4, %[rom_data]\n"
+    "   mov r0, #1\n"
+    "   lsl r0, #14\n"
+    "   add r4, r4, r0\n"
+    "   b main_loop\n"
+    "write_op:\n"
+    // r0 is data and address
+    "   cmp r8, %[nmiexit]\n"
+    "   bne main_loop\n"
+    "   lsr r0, r0, #16\n"
+    "   strb r0, [r4, r1]\n"
+    "   b main_loop\n"
+    :
+    : [base] "r" (PIO0_BASE), 
+      [nmiaddr] "h" ((0 << 14 | 0x66) << 17),
+      [nmiexit] "h" ((0 << 14 | 0x80) << 17),
+      [fstat_offset] "I" (PIO_FSTAT_OFFSET),
+      [sm0_rx_offset] "I" (PIO_RXF0_OFFSET),
+      [sm1_tx_offset] "I" (PIO_TXF0_OFFSET + 4),
+      [rx0empty_shift] "I" (PIO_FSTAT_RXEMPTY_LSB + 1),
+      [addr_mask] "i" (0x3FFF),
+      [rom_state] "r" (&rom_state),
+      [rom_data]  "h" (rom_data),
+      [rom_data_nmi]  "i" (rom_data + 16384)
+      
+    : "r0", "r2", "r1", "r3", "r4", "r8", "r9"
+    );
+
+    return;
+}
+
 
 
 void __time_critical_func(do_my_pio)() {
@@ -74,8 +181,10 @@ void __time_critical_func(do_my_pio)() {
     uint offset = pio_add_program(pio, &fetchaddr_program);
     pio_sm_config sm_config = fetchaddr_program_get_default_config(offset);
     sm_config_set_in_pins(&sm_config, 2);
-    sm_config_set_in_shift(&sm_config, true, false, 0);
+    sm_config_set_in_shift(&sm_config, true, true, 32);
     sm_config_set_sideset_pins(&sm_config, PIN_XE);
+
+
     pio_sm_init(pio, MY_SM, offset, &sm_config);
     pio_sm_set_enabled(pio, MY_SM, true);
 
@@ -84,8 +193,13 @@ void __time_critical_func(do_my_pio)() {
     sm_config_set_set_pins(&sm_config, PIN_CSROM, 1);
     sm_config_set_out_pins(&sm_config, PIN_D0, 8);
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
-    pio_sm_set_enabled(pio, SM_OUTDATA, true);    
+    pio_sm_set_enabled(pio, SM_OUTDATA, true);
 
+    #if 1
+
+    abcdemo();
+
+    #else
 
     uint32_t lastm1 = 0;
     uint32_t c = 'x';
@@ -114,7 +228,7 @@ void __time_critical_func(do_my_pio)() {
 
         if (romenabled) {
             if (access == 3 || access == 2) {
-                pio_sm_put(pio, SM_OUTDATA, romdata[romaddr]);
+                pio_sm_put(pio, SM_OUTDATA, rom_data[romaddr]);
             }
         }
         else {
@@ -145,6 +259,7 @@ void __time_critical_func(do_my_pio)() {
         }
 
     }
+    #endif
 }
 
 int64_t alarm_switch_debounce(alarm_id_t id, void* user_data) {
@@ -204,11 +319,13 @@ int main() {
         bool isup = gpio_get(PIN_USER_SWITCH);
         if (!isup) {
             printf("Switching ROM now..\n");
-            memcpy(romdata, FGH_ROM, FGH_ROM_SIZE);
-            romdata[5433] = 'a' + c % 32;
+            memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
+            rom_data[5433] = 'a' + c % 32;
             c++;
+            rom_state.flags = rom_state.flags ? 0 : 1;
             romenabled = !romenabled;
-            printf("Resetting %d\n", romenabled);
+            printf("Resetting %d\n", rom_state.flags);
+
             gpio_put(PIN_RESET, true);
             sleep_ms(3);
             gpio_put(PIN_RESET, false);        

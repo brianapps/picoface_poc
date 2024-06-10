@@ -15,9 +15,9 @@
 .side_set 1
 .wrap_target
     WAIT 0 GPIO PIN_PICOREQ SIDE 1 
-    IN PINS, 7 SIDE 0 [6]
+    IN PINS, 7 SIDE 0 [5]
     IN PINS, 25 SIDE 0 
-    PUSH SIDE 1
+    ;PUSH SIDE 1
     WAIT 1 GPIO PIN_PICOREQ SIDE 1 [1]
 .wrap
 
