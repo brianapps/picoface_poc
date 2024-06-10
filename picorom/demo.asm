@@ -1,11 +1,13 @@
-    org 34000
+    org 0x66
 
  ;   ld hl, 785
   ;  ld (hl), 12 
   ;  ret
 
-    ld hl, 32768
-    ld de, 32765
-    ld bc, 1024
-    ldir
-    ret
+    nop
+    push af
+    ld a, 2
+    out (0xfe), a     
+    pop af
+exitnmi:
+    retn

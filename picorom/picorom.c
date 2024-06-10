@@ -40,6 +40,7 @@ const uint8_t PIN_PICOREQ = 21;
 const uint8_t PIN_XE = 22;
 
 const uint8_t PIN_USER_SWITCH = 26;
+const uint8_t PIN_NMI = 27;
 
 const uint MY_SM = 0;
 const uint SM_OUTDATA = 1;
@@ -51,11 +52,19 @@ static queue_t eventqueue;
 struct MYSTATE {
     uint32_t flags;
     uint32_t nmi_active;
+    uint32_t writable;
 };
 
-volatile struct MYSTATE rom_state = {0, 0};
+volatile struct MYSTATE rom_state = {0};
 uint8_t rom_data[32768];
 
+// The RETN instruction is two bytes (ED 45) so the exit address is the 
+// for the second byte of the instruction.
+#define EXITNMI 0x0000006E
+
+const uint8_t NMI_ROM[] = {
+    0x00, 0xf5, 0x3e, 0x03, 0xd3, 0xfe, 0xf1, 0xed, 0x45, 
+};
 
 void __time_critical_func(serverom)() {
     //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
@@ -68,13 +77,13 @@ void __time_critical_func(serverom)() {
     "   mov r4, %[rom_data]\n"
     "main_loop:\n"
     "   ldr r1,=%[addr_mask]\n"
-    "check_empty:\n"
+    "check_fifo_empty:\n"
     "   ldr r0, [ %[base], %[fstat_offset]]\n"
     "   lsr r0, r0, %[rx0empty_shift]\n"
-    "   bcs check_empty\n"
+    "   bcs check_fifo_empty\n"
     "   ldr r0, [ %[base], %[sm0_rx_offset]]\n"   // r0 now holds data and address
     "   and r1, r0, r1\n"               // r1 now holds just address
-    "   lsl r2, r0, #17\n"                        // carry flag holds if was a read
+    "   lsl r2, r0, #17\n"                        // carry flag is set for a read, anc clear for a write
     "   bcc write_op\n"
     "   ldr r3, [ %[rom_state], #0]\n"            // r3 holds rom_sate
     "   lsr r3, r3, #1\n"                         // CC is set if rom enable, zero flag is NMI check is enabled
@@ -93,7 +102,7 @@ void __time_critical_func(serverom)() {
     "   mov r0, r9\n"
     "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what is was prior to entering the nmi routine
     "   mov r0, #1\n"                      // r8 is set to an invalid shifted address so we have effectively disabled
-    "   mov r8, r1\n"                      // the nmi exit check
+    "   mov r8, r1\n"                      // the nmi exit check from now on
     "   mov r4, %[rom_data]\n"             // Restore the rom address to the normal rom, regardless of whether the rom is enabled or not
     // And need to set a variable to say we aren't in the nmi anymore
     "   mov r0, #0\n"
@@ -130,15 +139,25 @@ void __time_critical_func(serverom)() {
     "   b main_loop\n"
     "write_op:\n"
     // r0 is data and address
+    // writes are allowed if we using the nmi rom ..
     "   cmp r8, %[nmiexit]\n"
-    "   bne main_loop\n"
+    "   beq perform_write\n"
+    // of if configured to allow it ..
+    "   ldr r2, [%[rom_state], #8 ]\n"
+    "   cmp r2, #0\n"
+    "   beq main_loop\n"
+    // and address above 16 (because the normal spectrum rom writes 
+    // to some lower locations and we want to ignore them)
+    "   cmp r1, #16\n"
+    "   blt main_loop\n"
+    "perform_write:"
     "   lsr r0, r0, #16\n"
     "   strb r0, [r4, r1]\n"
     "   b main_loop\n"
     :
     : [base] "r" (PIO0_BASE), 
       [nmiaddr] "h" ((0 << 14 | 0x66) << 17),
-      [nmiexit] "h" ((0 << 14 | 0x80) << 17),
+      [nmiexit] "h" ((0 << 14 | EXITNMI) << 17),
       [fstat_offset] "I" (PIO_FSTAT_OFFSET),
       [sm0_rx_offset] "I" (PIO_RXF0_OFFSET),
       [sm1_tx_offset] "I" (PIO_TXF0_OFFSET + 4),
@@ -226,7 +245,9 @@ int main() {
     queue_init(&eventqueue, 1, 16);
 
 
+    memcpy(rom_data + 16384 + 0x66, NMI_ROM, sizeof(NMI_ROM));
 
+    rom_state.flags = 2;
 
     multicore_launch_core1(do_my_pio);
 
@@ -238,6 +259,11 @@ int main() {
     gpio_init(PIN_RESET);
     gpio_put(PIN_RESET, false);
     gpio_set_dir(PIN_RESET, true);    
+
+     gpio_init(PIN_NMI);
+     gpio_put(PIN_NMI, true);
+     gpio_set_dir(PIN_NMI, true);    
+
 
     sleep_ms(1000);
     printf("Started %d\n", FGH_ROM_SIZE);
@@ -253,16 +279,33 @@ int main() {
 
         bool isup = gpio_get(PIN_USER_SWITCH);
         if (!isup) {
-            printf("Switching ROM now..\n");
-            memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
-            //rom_data[5433] = 'a' + c % 32;
-            c++;
-            rom_state.flags = rom_state.flags ? 0 : 1;
-            printf("Resetting %d\n", rom_state.flags);
 
-            gpio_put(PIN_RESET, true);
-            sleep_ms(3);
-            gpio_put(PIN_RESET, false);        
+            uint32_t count = 0;
+
+            for (count = 0; count < 1000 && !gpio_get(PIN_USER_SWITCH); count++) {
+                sleep_ms(1);
+            }
+
+            if (count < 1000) {
+                printf("Try to send nmi: %d\n", count);
+                rom_state.flags |= 2;
+                gpio_put(PIN_NMI, false);
+                sleep_ms(3);
+                gpio_put(PIN_NMI, true);        
+            }
+            else {
+                printf("Switching ROM now..\n");
+                memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
+                //rom_data[5433] = 'a' + c % 32;
+                c++;
+                rom_state.flags = (rom_state.flags & 1) ? 2 : 3;
+                rom_state.writable = 0;
+                printf("Resetting %d\n", rom_state.flags);
+
+                gpio_put(PIN_RESET, true);
+                sleep_ms(3);
+                gpio_put(PIN_RESET, false);        
+            }
         }
     }
     

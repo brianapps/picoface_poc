@@ -146,4 +146,10 @@ Spent an age this morning trying to trace down intermittent faults, e.g. press s
 
 Enabled autopush on the address reading state machine to save a cycle.
 
+Once the edge connector was firmly in place things moved forward well.
 
+The optimised code gives about 4-5 cycles of breathing space.
+
+Was able to add another flag to allow a rom to be writable.
+
+Also implemented the first implementation of an nmi handler. It justs changes the border colour before returning. But it works and am feeling super chuffed. The RETN instruction is two bytes and therefore the exit address needs to be one byte further forward.
