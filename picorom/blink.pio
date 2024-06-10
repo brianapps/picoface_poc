@@ -23,16 +23,15 @@
 
 
 .program putdata
+.side_set 1
 .wrap_target
-    PULL
-    SET PINS, 1
-    OUT PINS, 8
-    MOV OSR, ~NULL
-    OUT PINDIRS, 8
-    WAIT 1 GPIO PIN_PICOREQ [3]
-    MOV OSR, NULL
-    OUT PINDIRS, 8
-    SET PINS, 0
+    PULL SIDE 0
+    OUT PINS, 8 SIDE 1
+    MOV OSR, ~NULL SIDE 1
+    OUT PINDIRS, 8 SIDE 1
+    WAIT 1 GPIO PIN_PICOREQ [3] SIDE 1
+    MOV OSR, NULL SIDE 1
+    OUT PINDIRS, 8 SIDE 0
 .wrap
 
 

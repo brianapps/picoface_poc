@@ -189,7 +189,7 @@ void __time_critical_func(do_my_pio)() {
 
     offset = pio_add_program(pio, &putdata_program);
     sm_config = putdata_program_get_default_config(offset);
-    sm_config_set_set_pins(&sm_config, PIN_CSROM, 1);
+    sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
     sm_config_set_out_pins(&sm_config, PIN_D0, 8);
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
