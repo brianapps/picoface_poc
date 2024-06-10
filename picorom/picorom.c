@@ -54,11 +54,10 @@ struct MYSTATE {
 };
 
 volatile struct MYSTATE rom_state = {0, 0};
-volatile bool romenabled = false;
 uint8_t rom_data[32768];
 
 
-void __time_critical_func(abcdemo)() {
+void __time_critical_func(serverom)() {
     //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
     //register unsigned nmi_entry __asm("r11") = (1 << 14 | 0x66) << 17;
     // r9 holds previous romstate
@@ -195,71 +194,7 @@ void __time_critical_func(do_my_pio)() {
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
 
-    #if 1
-
-    abcdemo();
-
-    #else
-
-    uint32_t lastm1 = 0;
-    uint32_t c = 'x';
-
-    const uint32_t myaddr = 5433;
-
-    while (true) {
-        // Address read from PIO is 32 bits are follow
-        // Bits 0-13 = ROM address - mask 0x3FFF
-        // Bit 14 = /M1 - mask 0x4000
-        // Bit 15 = /WR - mask 0x8000
-        // Bit 16-23 = Data
-        // Bits 24-31 = Random/Ignored 
-        // The external logic circuit ensures addresses are only passed 
-        // if /WR is low and /RD is high or vice versa. Therefore is /WR
-        // is high then /RD must be low so Bit 14 is 1 for a read and 0 a write.
-        uint32_t addr = pio_sm_get_blocking(pio, MY_SM);
-
-        uint32_t romaddr = addr & 0x3FFF;
-
-        // Access is 
-        // 1 Write
-        // 2 M1 READ
-        // 3 Normal read        
-        uint8_t access = (addr >> 14) & 3;
-
-        if (romenabled) {
-            if (access == 3 || access == 2) {
-                pio_sm_put(pio, SM_OUTDATA, rom_data[romaddr]);
-            }
-        }
-        else {
-
-            if ((access == 3 || access == 2) && romaddr == myaddr) {
-                //pio_sm_put(pio, SM_CSROM, 0);
-                pio_sm_put(pio, SM_OUTDATA, c);
-                //c++;
-            } else if (access == 1 && romaddr == myaddr) {
-                c = (addr >> 16) & 0xFF;
-            }
-
-            if (access == 2) {
-                lastm1 = romaddr;
-            } else if (access == 1 && romaddr > 16) // ignore writes to lower access because these happen normally
-            {
-                // uint8_t writeval = (addr >> 16) & 0xFF;
-                // printf("Write at = %d to %d, 0x%X, lastm1 = %X\n", 
-                //     romaddr, writeval, addr, lastm1);
-                if (romaddr == 1234) {
-                    printf("Resetting\n");
-                    // gpio_put(PIN_RESET, true);
-                    // sleep_ms(3);
-                    // gpio_put(PIN_RESET, false);
-                }
-
-            }
-        }
-
-    }
-    #endif
+    serverom();
 }
 
 int64_t alarm_switch_debounce(alarm_id_t id, void* user_data) {
@@ -320,10 +255,9 @@ int main() {
         if (!isup) {
             printf("Switching ROM now..\n");
             memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
-            rom_data[5433] = 'a' + c % 32;
+            //rom_data[5433] = 'a' + c % 32;
             c++;
             rom_state.flags = rom_state.flags ? 0 : 1;
-            romenabled = !romenabled;
             printf("Resetting %d\n", rom_state.flags);
 
             gpio_put(PIN_RESET, true);
