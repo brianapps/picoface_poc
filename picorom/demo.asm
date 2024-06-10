@@ -5,9 +5,16 @@
   ;  ret
 
     nop
+    ld (oldsp), sp
+    ld sp, 0x1000
     push af
-    ld a, 2
+    ld a, 4
     out (0xfe), a     
     pop af
+    ld sp, (oldsp)
 exitnmi:
     retn
+
+
+oldsp:
+    .defw 0

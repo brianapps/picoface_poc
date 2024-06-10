@@ -60,11 +60,9 @@ uint8_t rom_data[32768];
 
 // The RETN instruction is two bytes (ED 45) so the exit address is the 
 // for the second byte of the instruction.
-#define EXITNMI 0x0000006E
-
-const uint8_t NMI_ROM[] = {
-    0x00, 0xf5, 0x3e, 0x03, 0xd3, 0xfe, 0xf1, 0xed, 0x45, 
-};
+extern const uint32_t EXITNMI;
+extern const uint8_t NMI_ROM[];
+extern const uint32_t NMI_ROM_SIZE;
 
 void __time_critical_func(serverom)() {
     //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
@@ -245,7 +243,7 @@ int main() {
     queue_init(&eventqueue, 1, 16);
 
 
-    memcpy(rom_data + 16384 + 0x66, NMI_ROM, sizeof(NMI_ROM));
+    memcpy(rom_data + 16384 + 0x66, NMI_ROM, NMI_ROM_SIZE);
 
     rom_state.flags = 2;
 
@@ -270,6 +268,8 @@ int main() {
 
     uint32_t c = 0;
 
+    uint8_t* nmi_rom_data = rom_data + 16384;
+
 
     while (true) {
         uint8_t event;
@@ -288,6 +288,7 @@ int main() {
 
             if (count < 1000) {
                 printf("Try to send nmi: %d\n", count);
+                printf("last sp =%d, %d\n", nmi_rom_data[0x00000073], nmi_rom_data[0x00000074]);
                 rom_state.flags |= 2;
                 gpio_put(PIN_NMI, false);
                 sleep_ms(3);
