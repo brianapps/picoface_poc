@@ -18,20 +18,29 @@
     IN PINS, 7 SIDE 0 [5]
     IN PINS, 25 SIDE 0 
     ;PUSH SIDE 1
-    WAIT 1 GPIO PIN_PICOREQ SIDE 1 [1]
+    WAIT 1 GPIO PIN_PICOREQ SIDE 1 
 .wrap
 
 
 .program putdata
 .side_set 1
-.wrap_target
     PULL SIDE 0
+.wrap_target
     OUT PINS, 8 SIDE 1
     MOV OSR, ~NULL SIDE 1
     OUT PINDIRS, 8 SIDE 1
-    WAIT 1 GPIO PIN_PICOREQ [3] SIDE 1
+    WAIT 1 GPIO PIN_PICOREQ SIDE 1
+    MOV OSR, NULL SIDE 1
+    OUT PINDIRS, 8 SIDE 1
+    PULL SIDE 1
+.wrap
+
+.program putdata_auto
+.side_set 1
+.wrap_target
+    OUT PINS, 8 SIDE 1
+    OUT PINDIRS, 8 SIDE 1
+    WAIT 1 GPIO PIN_PICOREQ SIDE 1
     MOV OSR, NULL SIDE 1
     OUT PINDIRS, 8 SIDE 0
 .wrap
-
-

@@ -139,16 +139,16 @@ void __time_critical_func(serverom)() {
     // r0 is data and address
     // writes are allowed if we using the nmi rom ..
     "   cmp r8, %[nmiexit]\n"
-    "   beq perform_write\n"
+    "   bne main_loop\n"
     // of if configured to allow it ..
-    "   ldr r2, [%[rom_state], #8 ]\n"
-    "   cmp r2, #0\n"
-    "   beq main_loop\n"
-    // and address above 16 (because the normal spectrum rom writes 
-    // to some lower locations and we want to ignore them)
-    "   cmp r1, #16\n"
-    "   blt main_loop\n"
-    "perform_write:"
+    // "   ldr r2, [%[rom_state], #8 ]\n"
+    // "   cmp r2, #0\n"
+    // "   beq main_loop\n"
+    // // and address above 16 (because the normal spectrum rom writes 
+    // // to some lower locations and we want to ignore them)
+    // "   cmp r1, #16\n"
+    // "   blt main_loop\n"
+    // "perform_write:"
     "   lsr r0, r0, #16\n"
     "   strb r0, [r4, r1]\n"
     "   b main_loop\n"
@@ -158,6 +158,7 @@ void __time_critical_func(serverom)() {
       [nmiexit] "h" ((0 << 14 | EXITNMI) << 17),
       [fstat_offset] "I" (PIO_FSTAT_OFFSET),
       [sm0_rx_offset] "I" (PIO_RXF0_OFFSET),
+      [sm0_tx_offset] "I" (PIO_TXF0_OFFSET),
       [sm1_tx_offset] "I" (PIO_TXF0_OFFSET + 4),
       [rx0empty_shift] "I" (PIO_FSTAT_RXEMPTY_LSB + 1),
       [addr_mask] "i" (0x3FFF),
@@ -204,12 +205,23 @@ void __time_critical_func(do_my_pio)() {
     pio_sm_init(pio, MY_SM, offset, &sm_config);
     pio_sm_set_enabled(pio, MY_SM, true);
 
+    #if 0
+    offset = pio_add_program(pio, &putdata_auto_program);
+    sm_config = putdata_auto_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
+    sm_config_set_out_pins(&sm_config, PIN_D0, 8);
+    sm_config_set_out_shift(&c, true, true, 8);
+    pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
+    pio_sm_set_enabled(pio, SM_OUTDATA, true);
+
+    #else
     offset = pio_add_program(pio, &putdata_program);
     sm_config = putdata_program_get_default_config(offset);
     sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
     sm_config_set_out_pins(&sm_config, PIN_D0, 8);
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
+    #endif
 
     serverom();
 }
@@ -245,14 +257,14 @@ int main() {
 
     memcpy(rom_data + 16384 + 0x66, NMI_ROM, NMI_ROM_SIZE);
 
-    rom_state.flags = 2;
+    rom_state.flags = 0;
 
     multicore_launch_core1(do_my_pio);
 
     gpio_init(PIN_USER_SWITCH);
     gpio_set_dir(PIN_USER_SWITCH, false);
     gpio_pull_up(PIN_USER_SWITCH);
-    gpio_set_irq_enabled_with_callback(PIN_USER_SWITCH, GPIO_IRQ_EDGE_FALL, true, user_switch_interrupt);
+    //gpio_set_irq_enabled_with_callback(PIN_USER_SWITCH, GPIO_IRQ_EDGE_FALL, true, user_switch_interrupt);
 
     gpio_init(PIN_RESET);
     gpio_put(PIN_RESET, false);
@@ -272,9 +284,9 @@ int main() {
 
 
     while (true) {
-        uint8_t event;
-        queue_remove_blocking(&eventqueue, &event);
-        printf("Queue popped %d\n", event);
+        //uint8_t event;
+        //queue_remove_blocking(&eventqueue, &event);
+        //printf("Queue popped %d\n", event);
         sleep_ms(2);
 
         bool isup = gpio_get(PIN_USER_SWITCH);
@@ -288,24 +300,44 @@ int main() {
 
             if (count < 1000) {
                 printf("Try to send nmi: %d\n", count);
-                printf("last sp =%d, %d\n", nmi_rom_data[0x00000073], nmi_rom_data[0x00000074]);
-                rom_state.flags |= 2;
-                gpio_put(PIN_NMI, false);
-                sleep_ms(3);
-                gpio_put(PIN_NMI, true);        
+
+                if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
+                    printf("Not issuing NMI because one is already active\n");
+                }
+                else {
+                    rom_state.flags |= 2;
+                    gpio_put(PIN_NMI, false);
+                    sleep_ms(3);
+                    gpio_put(PIN_NMI, true);
+                    // sleep_ms(2000);
+
+                    // uint8_t* scr = rom_data + 16384 + 0x2000;
+
+                    // for (uint l = 0; l < 108; l++) {
+                    //     for (uint c = 0; c < 64; c++) {
+                    //         printf("%02X", *scr);
+                    //         scr++;
+                    //     }
+                    //     printf("\n");
+                    // }
+
+                }
             }
             else {
                 printf("Switching ROM now..\n");
                 memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
                 //rom_data[5433] = 'a' + c % 32;
                 c++;
-                rom_state.flags = (rom_state.flags & 1) ? 2 : 3;
+                rom_state.flags = (rom_state.flags & 1) ? 0 : 1;
                 rom_state.writable = 0;
                 printf("Resetting %d\n", rom_state.flags);
 
                 gpio_put(PIN_RESET, true);
                 sleep_ms(3);
-                gpio_put(PIN_RESET, false);        
+                gpio_put(PIN_RESET, false);    
+
+               while (!gpio_get(PIN_USER_SWITCH))
+                    sleep_ms(1);
             }
         }
     }
