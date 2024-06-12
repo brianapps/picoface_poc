@@ -153,3 +153,61 @@ The optimised code gives about 4-5 cycles of breathing space.
 Was able to add another flag to allow a rom to be writable.
 
 Also implemented the first implementation of an nmi handler. It justs changes the border colour before returning. But it works and am feeling super chuffed. The RETN instruction is two bytes and therefore the exit address needs to be one byte further forward.
+
+
+## 12 Jun 2024
+
+I put in a lot of work implementing an simple NMI menu screen that saves the and restores the screen state.
+
+All looked fine for a while until I stated seeing corruption when restoring the screen from the pico ram.
+
+Dumping the contents of the picoram showed the screen had been correctly read from RAM and written to the pico. So the issue lied in the LDIR command that transferred the saved screen data back to the actual screen.
+
+An awful lot of tweaking with timing went on and attempting to rewrite the PIOs and the code to improve timing etc. Then about 9:30pm last night I discovered that keeping the /CSROM line high (i.e. disabling the internal ROM) resolved the corruption. To test this, I first had to switch to the gosh rom and then use the nmi routines.
+
+This result hinted that the /CSROM line timing was affecting pico rom reads during LDIR instructions so I played around with a ton of settings for hours.
+
+In end trying something simple the following morning appears to have fixed things:
+
+Adding a delay after pulling /CSROM high seems to work. I guess this gives the internal ROM a chance to fully disable before we take over the
+lines an plonk our data on it. Too early to say if this works, but it's feels good!
+
+```
+.program putdata
+.side_set 1
+    PULL SIDE 0
+.wrap_target
+    OUT PINS, 8 SIDE 1 [2]
+    MOV OSR, ~NULL SIDE 1
+    OUT PINDIRS, 8 SIDE 1
+    WAIT 1 GPIO PIN_PICOREQ SIDE 1
+    MOV OSR, NULL SIDE 0
+    OUT PINDIRS, 8 SIDE 0
+    PULL SIDE 0
+.wrap
+```
+
+Not perfect have seen some corruption on knight lore after several attempts. Increasing to delay to 3 still doesn't completely fix it.
+4 still causes corruption, and 5 causes the nmi to hang oh dear.
+
+Well, when I went back and tested keeping the rom disabled there was still corruption. So something else is happening.
+
+Right, the corruption in Knight Lore is probably because the return address is pushed onto the stack during NMI handling. Knight Lore is probably making clever use of the stack pointer to shuffle sprites into the screen. This would explain why the corruption is permanent. In addition I've written a soak test to ldir into the pico ram, then ldir from the pico ram to the screen and compare. After 49mins there have been no errors so I'd say it's looking good. (it's done 1 hour.)
+
+Now it's time to think about the design of the speccy to pico RPC mechanism.
+
+Functions to include:
+
+open_sna_for_write: name -> success/fail
+write_to_sna: source, length -> success/fail
+close_sna -> success/fail
+
+open_sna_for_read: name -> success/fail
+read_from_sna: destination, length -> success/fail, bytes read
+close_sna -> success/fail
+
+
+list_snapshots: start_index, buffer, buffer_length -> success/fail, entries read, total count
+
+
+

@@ -88,6 +88,7 @@ void __time_critical_func(serverom)() {
     "   bcc read_rom_disabled\n"
     "   beq send_data\n"
     "   cmp r2, %[nmiaddr]\n"
+   // "   str r0, [ %[base], %[sm1_tx_offset] ]\n"
     "   beq activate_nmi\n"
     "send_data:\n"
     "   ldrb r0, [r4, r1]\n"
@@ -109,6 +110,7 @@ void __time_critical_func(serverom)() {
 
 
     "activate_nmi:\n"
+    //"   str r0, [ %[base], %[sm1_tx_offset] ]\n"
     "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
     "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
     "   mov r0, #1\n"
@@ -210,7 +212,7 @@ void __time_critical_func(do_my_pio)() {
     sm_config = putdata_auto_program_get_default_config(offset);
     sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
     sm_config_set_out_pins(&sm_config, PIN_D0, 8);
-    sm_config_set_out_shift(&c, true, true, 8);
+    //sm_config_set_out_shift(&sm_config, true, true, 8);
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
 
