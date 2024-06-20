@@ -228,26 +228,51 @@ void __time_critical_func(do_my_pio)() {
     serverom();
 }
 
-int64_t alarm_switch_debounce(alarm_id_t id, void* user_data) {
-    bool isup = gpio_get(PIN_USER_SWITCH);
-    if (!isup) {
-        printf("Switching the rom now\n");
-        uint8_t data = 1;
-        queue_add_blocking(&eventqueue, &data);
-        // memcpy(romdata, FGH_ROM, FGH_ROM_SIZE);
-        // //romenabled = true;
-        // printf("Resetting\n");
-        // gpio_put(PIN_RESET, true);
-        // sleep_ms(3);
-        // // gpio_put(PIN_RESET, false);
-    }
-    
-    return 0;
-}
 
-void user_switch_interrupt() {
-    uint8_t data = 1;
-    queue_add_blocking(&eventqueue, &data);
+extern const uint8_t MANIC_DATA[];
+extern const uint32_t MANIC_SIZE;
+
+const uint8_t* current_sna_data = NULL;
+uint32_t current_sna_offset =  0;
+uint32_t current_sna_size = 0;
+
+
+void process_nmi_request() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint8_t action = nmi_rom_data[1];
+    printf("Action to process: %d\n", action);
+
+    if (action == 1) {
+        uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+        current_sna_data = MANIC_DATA;
+        current_sna_size = MANIC_SIZE;
+        printf("Start SNA, head destination: %X\n", headeroffset);
+        // for (int i = 0; i < 27; i++)
+        //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
+        memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
+        //memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
+        current_sna_offset = 27;
+    }
+    else if (action == 2) {
+        uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+        uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+
+        uint32_t tocopy = MIN(count, current_sna_size - current_sna_offset);
+
+        printf("Continue SNA, destination: %X, count: %X\n", offset, tocopy);
+
+        memcpy(nmi_rom_data + offset, current_sna_data + current_sna_offset, tocopy);
+
+        current_sna_offset += tocopy;
+
+        nmi_rom_data[4] = tocopy & 0xFF;
+        nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
+
+    }
+
+
+    nmi_rom_data[0] = 0;
+
 }
 
 
@@ -257,7 +282,7 @@ int main() {
     queue_init(&eventqueue, 1, 16);
 
 
-    memcpy(rom_data + 16384 + 0x66, NMI_ROM, NMI_ROM_SIZE);
+    memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
 
     rom_state.flags = 0;
 
@@ -279,6 +304,7 @@ int main() {
 
     sleep_ms(1000);
     printf("Started %d\n", FGH_ROM_SIZE);
+    printf("SNA: %d\n", MANIC_DATA[0]);
 
     uint32_t c = 0;
 
@@ -290,6 +316,10 @@ int main() {
         //queue_remove_blocking(&eventqueue, &event);
         //printf("Queue popped %d\n", event);
         sleep_ms(2);
+
+        if (nmi_rom_data[0] == 255) {
+            process_nmi_request();
+        }
 
         bool isup = gpio_get(PIN_USER_SWITCH);
         if (!isup) {
@@ -307,6 +337,8 @@ int main() {
                     printf("Not issuing NMI because one is already active\n");
                 }
                 else {
+                    //memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
+                    nmi_rom_data[0] = 0;
                     rom_state.flags |= 2;
                     gpio_put(PIN_NMI, false);
                     sleep_ms(3);

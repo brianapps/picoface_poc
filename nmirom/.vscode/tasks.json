@@ -1,0 +1,43 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "compile nmi",
+			"type": "shell",
+			"command": "sjasmplus", // Please add the full path to sjasmplus
+			"args": [
+				"--sld=nmirom.sld",
+				"--sym=nmirom.sym",
+				"--lst=nmirom.lst",
+				"--fullpath",
+				"nmirom.asm"
+			],
+			"problemMatcher": {
+				"owner": "sjasmplus",
+				"fileLocation": "autoDetect",
+				"pattern": {
+					"regexp": "^(.*)\\((\\d+)\\):\\s+(warning|error):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"severity": 3,
+					"message": 4
+				}
+			},
+			"group": {
+				"kind": "build",
+			}
+		},
+		{
+			"label": "create nmi.c",
+			"type": "shell",
+			"dependsOn": "compile nmi",
+			"command": "python3",
+			"args": ["to_c_file.py"],
+			"problemMatcher": [],
+			"group" : {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	]
+}

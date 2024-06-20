@@ -5,6 +5,14 @@
 		},
 		{
 			"path": "gal"
+		},
+		{
+			"path": "nmirom"
 		}
-	]
+	],
+	"settings": {
+		"files.associations": {
+			"limits": "c"
+		}
+	}
 }

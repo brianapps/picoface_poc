@@ -1,0 +1,68 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "dezog",
+            "request": "launch",
+            "name": "Run NMI Rom",
+            "remoteType": "zsim",
+            "preLaunchTask": "compile nmi",
+            "zsim": {
+                "visualMemory": true,
+                "memoryModel": "CUSTOM",
+                "ulaScreen": true,
+                "zxBorderWidth": 20,
+                "vsyncInterrupt": true,
+                "zxKeyboard": true,
+                "zxBeeper": true,
+                "customMemory": {
+                "slots": [
+                    {
+                        "range": ["0x0000", "0x3FFF"],
+                        "banks": [
+                            {
+                                "index": 0,
+                                "name": "SOFTROM",
+                            }
+                        ]
+                    },
+                    {
+                        "range": ["0x4000", "0xFFFF"],
+                        "banks": [
+                            {
+                                "index": 1,
+                                "name": "RAM"
+                            }
+                        ]
+                    }
+                ]
+            }
+            },
+            "sjasmplus": [
+                {
+                 "path": "nmirom.sld"
+                }
+            ],
+            "history": {
+                "reverseDebugInstructionCount": 1000000,
+                "spotCount": 10,
+                "codeCoverageEnabled": true
+            },
+        
+            "startAutomatically": false,
+            "commandsAfterLaunch": [
+            ],
+            "rootFolder": "${workspaceFolder}",
+            "topOfStack": "stack_top",
+            "loadObjs": [
+                {"path": "nmirom.bin", "start": "0x0000"}
+            ],
+            "smallValuesMaximum": 513,
+            "tmpDir": ".tmp",
+            "execAddress": "0x66"
+        },
+    ]
+}
