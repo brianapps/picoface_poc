@@ -24,3 +24,4 @@ def convert_sna(sna_file_input, name : str):
 
 
 convert_sna('sna/Manic Miner.sna', 'manic')
+convert_sna('sna/Knight.sna', 'knight')

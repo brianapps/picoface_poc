@@ -6,6 +6,7 @@
 #include "hardware/pio.h"
 
 #include "blink.pio.h"
+#include "lz4.h"
 
 extern const uint8_t FGH_ROM[];
 extern const uint32_t FGH_ROM_SIZE;
@@ -229,12 +230,19 @@ void __time_critical_func(do_my_pio)() {
 }
 
 
+static uint8_t sna_buffer[49179];
+
 extern const uint8_t MANIC_DATA[];
 extern const uint32_t MANIC_SIZE;
+
+extern const uint8_t KNIGHT_DATA[];
+extern const uint32_t KNIGHT_SIZE;
 
 const uint8_t* current_sna_data = NULL;
 uint32_t current_sna_offset =  0;
 uint32_t current_sna_size = 0;
+
+uint32_t current_sna_write_offset = 0;
 
 
 void process_nmi_request() {
@@ -243,9 +251,20 @@ void process_nmi_request() {
     printf("Action to process: %d\n", action);
 
     if (action == 1) {
-        uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
-        current_sna_data = MANIC_DATA;
-        current_sna_size = MANIC_SIZE;
+        uint16_t headeroffset =  (nmi_rom_data[4] << 8) |  nmi_rom_data[3];
+
+        if (nmi_rom_data[2] == 1) {
+            printf("Loading knight");
+            current_sna_data = KNIGHT_DATA;
+            current_sna_size = KNIGHT_SIZE;
+        } else if (nmi_rom_data[2] == 255) {
+            printf("Loading Internal");
+            current_sna_data = sna_buffer;
+            current_sna_size = sizeof(sna_buffer);
+        } else {
+            current_sna_data = MANIC_DATA;
+            current_sna_size = MANIC_SIZE;
+        }
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
         //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
@@ -268,6 +287,18 @@ void process_nmi_request() {
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
 
+    }  else if (action == 3) {
+        uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+        printf("Start SNA save, head destination: %X\n", headeroffset);
+        memcpy(sna_buffer, nmi_rom_data + headeroffset, 27);
+        current_sna_write_offset = 27;
+    }  else if (action == 4) {
+        uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+        uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+        uint32_t tocopy = MIN(count, sizeof(sna_buffer) - current_sna_write_offset);
+        printf("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
+        memcpy(sna_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
+        current_sna_write_offset += tocopy;
     }
 
 

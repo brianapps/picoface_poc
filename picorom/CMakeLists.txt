@@ -39,7 +39,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom picorom.c rom.c nmi.c manic.c)
+add_executable(picorom picorom.c rom.c nmi.c manic.c knight.c lz4.c)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")

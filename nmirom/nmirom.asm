@@ -4,6 +4,7 @@
 
 SCREEN: equ 0x4000
 SCREEN_ATTRIB: equ 0x5800
+BORDCR: equ  0x5C48
 
 ACTION_BEGIN_SNA_READ: equ 0x01
 // param1 = destination for sna header
@@ -13,6 +14,14 @@ ACTION_SNA_READ_NEXT equ 0x02
 // param1 = destination for data
 // param2 = length to read
 // returns, bytes read in param2
+
+ACTION_SNA_BEGIN_WRITE equ 0x03
+// param1 = destination of the sna header
+
+ACTION_SNA_NEXT_WRITE equ 0x04
+// param1 = source of data
+// param2 = length to write
+
 
 
 
@@ -47,19 +56,52 @@ startmenu:
     org 0x66
     nop
 
-    ld (stacksave), sp
+    ld (sna_on_entry + SNAHEADER.SP), SP
+    ld (sna_on_entry + SNAHEADER.HL), HL
+    ld (sna_on_entry + SNAHEADER.DE), DE
+    ld (sna_on_entry + SNAHEADER.BC), BC
+    ld (sna_on_entry + SNAHEADER.IX), IX
+    ld (sna_on_entry + SNAHEADER.IY), IY
     ld sp, stack_top
+
     push af, bc, de, hl
+
+    push af
+    pop hl
+    ld (sna_on_entry + SNAHEADER.AF), HL
+    exx
+    ld (sna_on_entry + SNAHEADER.HLx), HL
+    ld (sna_on_entry + SNAHEADER.DEx), DE
+    ld (sna_on_entry + SNAHEADER.BCx), BC
+    exx
+    ex af, af'
+    push af
+    pop hl
+    ld (sna_on_entry + SNAHEADER.AFx), HL
+    ex af, af'
+
+
+    ld (sna_on_entry + SNAHEADER.IX), IX
+    ld (sna_on_entry + SNAHEADER.IY), IY
+
+
 
     xor a
     ld (iff2save), a
+    ld (sna_on_entry + SNAHEADER.IFF2), a
 
     ld a, i
+    ld (sna_on_entry + SNAHEADER.I), a
     ;p/v contains iff2, p/v = 1 is even parity
     jp po,  .interruptsweredisbled
 
     ld a, 1
     ld (iff2save), a
+    ld a, 0b100
+    ld (sna_on_entry + SNAHEADER.IFF2), a
+
+    call getimmode
+    ld (immoddesave), a
 
 
 .interruptsweredisbled:    
@@ -78,25 +120,28 @@ startmenu:
     ld hl, hellomsg
     call putstring
 
-    ; IFDEF GETIMMODE
-    ; call getimmode
-    ; add '0'
-    ; ld c, a
-    ; ld de, 0x0114
-    ; call putchar
-    ; inc e
-    ; ld a, (iff2save)
-    ; add '0'
-    ; ld c, a
-    ; call putchar
-    ; ENDIF
-
     ld de, 0x0114
     ld a, (iff2save)
     add '0'
     ld c, a
-    call putchar    
-    
+    call putchar
+    inc e 
+    ld a, (immoddesave)
+    add '0'
+    ld c, a
+    call putchar
+    inc e 
+    ld a, (BORDCR)
+    rra
+    rra
+    rra
+    and 0x7
+    ld (sna_on_entry + SNAHEADER.BORD), a
+    add '0'
+    ld c, a
+    call putchar
+
+
     ld de, 0x0302
     ld hl, savemsg
     call putstring
@@ -122,7 +167,8 @@ startmenu:
     ld de, 0x0302
     call reverseattr
     call waitforkeyrelease
-    jr .showtopscreen
+    call savesnapshot
+    jr .exittopscreen
 
 1:
     cp 'l'
@@ -146,6 +192,17 @@ startmenu:
     call reverseattr
     call waitforkeyrelease
     jp .showtopscreen
+
+1:
+    cp '1'
+    jr nz, 1F
+    call waitforkeyrelease
+
+    ld sp, 16384 + 8000
+    ld hl, 0
+    push hl
+
+    jr exitnmi
 1:
     jr .keyprocessing
 
@@ -167,21 +224,23 @@ startmenu:
     cp 0
     jr nz, .exitwithei
     pop af
-    ld sp, (stacksave)
+    ld sp, (sna_on_entry + SNAHEADER.SP)
     jr exitnmi
 .exitwithei:    
     pop af
-    ld sp, (stacksave)
+    ld sp, (sna_on_entry + SNAHEADER.SP)
+ei_exitnmi:
     ei
 exitnmi:
     ret
 
 oldborder:
     .byte 0
+immoddesave:
+    .byte 0
 iff2save:
     .byte 0
-stacksave:
-    .word 0
+
 
 
 hellomsg: DZ "picoFace"
@@ -190,6 +249,8 @@ loadmsg: DZ "L-Load snapshot"
 chamgemsg: DZ "R-Change ROM"
 exitmsg: DZ "X-Exit"
 
+
+sna_on_entry: BLOCK SNAHEADER
 
 
 // a is key pressed
@@ -220,6 +281,10 @@ loadscreen:
     call putstring
 
     ld de, 0x0502
+    ld hl, .snap3
+    call putstring    
+
+    ld de, 0x0602
     ld hl, exitmsg
     call putstring
 
@@ -234,6 +299,7 @@ loadscreen:
     ld de, 0x0302
     call reverseattr
     call waitforkeyrelease
+    xor a
     jp loadsnapshot
 
 1:  cp '2'
@@ -241,11 +307,21 @@ loadscreen:
     ld de, 0x0402
     call reverseattr
     call waitforkeyrelease
-    ret
+    ld a, 1
+    jp loadsnapshot
+
+
+1:  cp '3'
+    jr nz, 1F
+    ld de, 0x0502
+    call reverseattr
+    call waitforkeyrelease
+    ld a, 255
+    jp loadsnapshot    
 
 1:  cp 'x'
     jr nz, 1F
-    ld de, 0x0502
+    ld de, 0x0602
     call reverseattr
     call waitforkeyrelease
     ret
@@ -257,13 +333,79 @@ loadscreen:
 
 .titlemsg DZ "Load snapshotx"
 .snap1 DZ "1-Manic Miner"
-.snap2 DZ "2-Internal snapshot"
+.snap2 DZ "2-Knight Lore"
+.snap3 DZ "3-Internal snapshot"
+
+     STRUCT SNAHEADER
+I    BYTE
+HLx  WORD
+DEx  WORD
+BCx  WORD
+AFx  WORD
+HL   WORD
+DE   WORD
+BC   WORD
+IY   WORD
+IX   WORD
+IFF2 BYTE
+R    BYTE
+AF   WORD
+SP   WORD
+IM   BYTE
+BORD BYTE
+     ENDS
+
+savesnapshot:
+    push ix
+    ld ix, 0
+    ld hl, sna_on_entry
+    ld (ix + 2), hl
+    ld (ix + 1), ACTION_SNA_BEGIN_WRITE
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+
+
+    ld de, screen_save
+    ld bc, 6912
+    ld (ix + 2), de
+    ld (ix + 4), bc
+    ld (ix + 1), ACTION_SNA_NEXT_WRITE
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+
+    ld b, 12
+    ld hl, 16384 + 6912
+
+.transfer
+    push bc
+    ld de, spare_space
+    ld bc, 3520
+    ld (ix + 2), de
+    ld (ix + 4), bc
+    ld (ix + 1), ACTION_SNA_NEXT_WRITE
+    ldir
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+    pop bc
+    djnz .transfer
+    pop ix
+
+    ret
+
+
 
 loadsnapshot:
     push ix
     ld ix, 0
     ld hl, sna_header
-    ld (ix + 2), hl
+    ld (ix + 2), a
+    ld (ix + 3), hl
     ld (ix + 1), ACTION_BEGIN_SNA_READ
     ld (ix + 0), 255
 1:  ld a, (ix)
@@ -293,25 +435,47 @@ loadsnapshot:
     djnz .transfer
     pop ix
 
-    ld a, (sna_header)
+    ld a, (sna_header + SNAHEADER.I)
     ld i, a
+    ld a, (sna_header + SNAHEADER.IM)
+    cp 2
+    jr z, .im2mode
+    im 1
+    jr 1F
+.im2mode
+    im 2
+1:
     exx
-    ld hl, (sna_header + 0x07)
+    ex af, af'
+    ld hl, (sna_header + SNAHEADER.AFx)
     push hl
     pop af
-    ld hl, (sna_header + 0x01)
-    ld de, (sna_header + 0x03)
-    ld bc, (sna_header + 0x05)
+    ld hl, (sna_header + SNAHEADER.HLx)
+    ld de, (sna_header + SNAHEADER.DEx)
+    ld bc, (sna_header + SNAHEADER.BCx)
     exx
-    ld hl, (sna_header + 0x15)
+    ex af, af'
+    ld hl, (sna_header + SNAHEADER.AF)
     push hl
-    ld hl, (sna_header + 0x09)
-    ld de, (sna_header + 0x0B)
-    ld bc, (sna_header + 0x0D)
-    ld iy, (sna_header + 0x0F)
-    ld ix, (sna_header + 0x11)
+    ld hl, (sna_header + SNAHEADER.HL)
+    ld de, (sna_header + SNAHEADER.DE)
+    ld bc, (sna_header + SNAHEADER.BC)
+    ld iy, (sna_header + SNAHEADER.IY)
+    ld ix, (sna_header + SNAHEADER.IX)
+    ld a, (sna_header + SNAHEADER.IFF2)
+
+    bit 2, a
+
+    jr z, .di
+
     pop af
-    ld sp, (sna_header + 0x17)
+    ld sp, (sna_header + SNAHEADER.SP)
+    jp ei_exitnmi
+
+
+.di:
+    pop af
+    ld sp, (sna_header + SNAHEADER.SP)
     di
     jp exitnmi
 
