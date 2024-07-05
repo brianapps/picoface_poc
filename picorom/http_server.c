@@ -73,6 +73,24 @@ void sendHttpResponse(struct tcp_pcb *pcb, uint status, const char* msg) {
 }
 
 
+void handleDeleteOperation(struct tcp_pcb* pcb) {
+    if (pico_remove(handler.path) >= 0) {
+        sendHttpResponse(pcb, 200, NULL);
+    } else {
+        sendHttpResponse(pcb, 400, "Failed to delete file.");
+    }
+}
+
+
+void handleCreateDirectory(struct tcp_pcb* pcb) {
+    if (pico_mkdir(handler.path) >= 0) {
+        sendHttpResponse(pcb, 200, NULL);
+    } else {
+        sendHttpResponse(pcb, 400, "Failed to create directory.");
+    }
+}
+
+
 const static char CHUNKED_RESPONSE[] = 
     "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/octet-stream\r\n\r\n";
 
@@ -249,6 +267,9 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
                     else if (strcasecmp(handler.parseBuffer, "post") == 0) {
                         handler.httpVerb = VERB_POST;
                     }
+                    else if (strcasecmp(handler.parseBuffer, "delete") == 0) {
+                        handler.httpVerb = VERB_DELETE;
+                    }
 
                     printf("Verb: %s (%d)\n", handler.parseBuffer, handler.httpVerb);
                     // check the verb
@@ -289,9 +310,6 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
                     handler.currentStep = PARSE_BODY_PRE;
                 } else if (!appendToBufferUnlessStopChar(c, ':')) {
                     printf("Header name: %s\n", handler.parseBuffer);
-
-                    
-
                     if (strcasecmp(handler.parseBuffer, "CONTENT-LENGTH") == 0) {
                         handler.currentHeader = CONTENT_LENGTH;
                     }
@@ -321,7 +339,6 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
                     // check the header value
                     if (handler.currentHeader == CONTENT_LENGTH) {
                         handler.contentLength = atoi(handler.parseBuffer);
-                        //printf("Content length=%d\n", contentLengthRemaining);
                     }
                     handler.parsePosition = 0;
                     handler.currentStep = PARSE_HEADER_VALUE_POST;
@@ -345,9 +362,13 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
                     printf("No content, request headers have been parsed\n");
                     if (handler.httpVerb == VERB_GET) {
                         startSendingFileContents(tpcb);
-                    }
-                    else
+                    } else if (handler.httpVerb == VERB_DELETE) {
+                        handleDeleteOperation(tpcb);
+                    } else if (handler.httpVerb == VERB_POST) {
+                        handleCreateDirectory(tpcb);
+                    } else {
                         sendHttpResponse(tpcb, 400, "Alert!!\r\n");
+                    }
                     handler.currentStep = PARSE_DONE;
                 } else {
                     handler.currentStep = PARSE_BODY;
