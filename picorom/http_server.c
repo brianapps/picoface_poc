@@ -1,8 +1,3 @@
-/**
- * Copyright (c) 2022 Raspberry Pi (Trading) Ltd.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
 
 #include <string.h>
 #include <stdlib.h>
@@ -50,6 +45,7 @@ struct HttpHandler {
     uint32_t contentLength;
     uint32_t contentLengthProcessed;
     int filehandle;
+    int dirhandle;
     bool moretosend;
 };
 
@@ -64,9 +60,10 @@ void sendHttpResponse(struct tcp_pcb *pcb, uint status, const char* msg) {
 
     if (msg != NULL && msg[0] != '\0') {
         size_t msglen = strlen(msg);
-        len = sprintf(buffer, "Content-Length: %d\r\nContent-Type: text/plain\r\n\r\n", msglen);
+        len = sprintf(buffer, "Content-Length: %d\r\nContent-Type: text/plain\r\n\r\n", msglen + 2);
         tcp_write(pcb, buffer, len, TCP_WRITE_FLAG_COPY);
         tcp_write(pcb, msg, msglen, TCP_WRITE_FLAG_COPY);
+        tcp_write(pcb, "\r\n", 2, TCP_WRITE_FLAG_COPY);
     }
     else {
         tcp_write(pcb, "\r\n", 2, TCP_WRITE_FLAG_COPY);
@@ -82,29 +79,49 @@ const static char CHUNKED_RESPONSE[] =
 
 void startSendingFileContents(struct tcp_pcb *pcb) {
 
-    handler.filehandle = pico_open(handler.path, LFS_O_RDONLY);
-    if (handler.filehandle < 0) {
-        sendHttpResponse(pcb, 400, "Can't open file.");
-        handler.filehandle = 0;
+    struct lfs_info file_info;
+    if (pico_stat(handler.path, &file_info) < 0) {
+        sendHttpResponse(pcb, 404, "Can't obtain info.");
         return;
     }
 
-    handler.contentLength = pico_size(handler.filehandle);
-
-    if (handler.contentLength < 1024) {
-        char buffer[1024];
-        int len = sprintf(buffer, 
-            "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nContent-Type: application/octet-stream\r\n\r\n", 
-            handler.contentLength);
-        tcp_write(pcb, buffer, len, TCP_WRITE_FLAG_COPY);
-        pico_read(handler.filehandle, buffer, handler.contentLength);
-        tcp_write(pcb, buffer, handler.contentLength, TCP_WRITE_FLAG_COPY);
-        tcp_output(pcb);
-    }
-    else {
+    if (file_info.type == LFS_TYPE_DIR) {
+        printf("Need to handle directory read\n");
+        handler.dirhandle = pico_dir_open(handler.path);
+        if (handler.dirhandle < 0) {
+            sendHttpResponse(pcb, 400, "Can't open directory.");
+            handler.dirhandle = 0;
+            return;
+        }        
         handler.moretosend = true;
         tcp_write(pcb, CHUNKED_RESPONSE, sizeof(CHUNKED_RESPONSE)- 1, TCP_WRITE_FLAG_COPY);
         tcp_output(pcb);        
+    }
+    else {
+        handler.filehandle = pico_open(handler.path, LFS_O_RDONLY);
+        if (handler.filehandle < 0) {
+            sendHttpResponse(pcb, 400, "Can't open file.");
+            handler.filehandle = 0;
+            return;
+        }
+
+        handler.contentLength = file_info.size;
+
+        if (handler.contentLength < 1024) {
+            char buffer[1024];
+            int len = sprintf(buffer, 
+                "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nContent-Type: application/octet-stream\r\n\r\n", 
+                handler.contentLength);
+            tcp_write(pcb, buffer, len, TCP_WRITE_FLAG_COPY);
+            pico_read(handler.filehandle, buffer, handler.contentLength);
+            tcp_write(pcb, buffer, handler.contentLength, TCP_WRITE_FLAG_COPY);
+            tcp_output(pcb);
+        }
+        else {
+            handler.moretosend = true;
+            tcp_write(pcb, CHUNKED_RESPONSE, sizeof(CHUNKED_RESPONSE)- 1, TCP_WRITE_FLAG_COPY);
+            tcp_output(pcb);        
+        }
     }
 }
 
@@ -125,6 +142,45 @@ void continueSendingFileContents(struct tcp_pcb* pcb) {
 }
 
 
+void continueListingDirectory(struct tcp_pcb* pcb) {
+    char bufferChunkSize[16];
+    char buffer[1024];
+    struct lfs_info file_info;
+    if (pico_dir_read(handler.dirhandle, &file_info) > 0) {
+        bool isdir = file_info.type == LFS_TYPE_DIR;
+        int len = sprintf(buffer, "%6d %s%s%s\r\n\r\n", file_info.size, 
+            isdir ? "[" : "", file_info.name, isdir ? "]" : "");
+        int lenSize = sprintf(bufferChunkSize, "%X\r\n", len - 2);
+        tcp_write(pcb, bufferChunkSize, lenSize, TCP_WRITE_FLAG_COPY);
+        tcp_write(pcb, buffer, len, TCP_WRITE_FLAG_COPY);
+        tcp_output(pcb);
+    }
+    else {
+        struct pico_fsstat_t stat;
+        pico_fsstat(&stat);
+        int len = sprintf(buffer, "\r\nFS: blocks %d, block size %d, used %d\r\n\r\n", (int)stat.block_count, (int)stat.block_size,
+           (int)stat.blocks_used);
+        int lenSize = sprintf(bufferChunkSize, "%X\r\n", len - 2);
+
+        tcp_write(pcb, bufferChunkSize, lenSize, TCP_WRITE_FLAG_COPY);
+        tcp_write(pcb, buffer, len, TCP_WRITE_FLAG_COPY);
+        tcp_write(pcb, "0\r\n\r\n", 5, TCP_WRITE_FLAG_COPY);    
+        tcp_output(pcb);
+        handler.moretosend = false;
+    }
+}
+
+
+
+void continueSendingResponse(struct tcp_pcb* pcb) {
+    if (handler.dirhandle != 0) {
+        continueListingDirectory(pcb);
+    } else {
+        continueSendingFileContents(pcb);
+    }
+}
+
+
 void init_http_parser() {
     handler.contentLengthProcessed = 0;
     handler.contentLength = 0;
@@ -134,12 +190,17 @@ void init_http_parser() {
     handler.currentStep = PARSE_VERB;
     handler.filehandle = 0;
     handler.moretosend = false;
+    handler.dirhandle = 0;
 }
 
 void end_http_parser() {
     if (handler.filehandle > 0) {
         pico_close(handler.filehandle);
         handler.filehandle = 0;
+    }
+    if (handler.dirhandle > 0) {
+        pico_dir_close(handler.dirhandle);
+        handler.dirhandle = 0;
     }
 }
 
@@ -283,11 +344,7 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
                 if (handler.contentLength == 0) {
                     printf("No content, request headers have been parsed\n");
                     if (handler.httpVerb == VERB_GET) {
-                        if (strcmp(handler.path, "/") == 0) {
-                            sendHttpResponse(tpcb, 200, "List the files\r\n");    
-                        } else {
-                            startSendingFileContents(tpcb);
-                        }
+                        startSendingFileContents(tpcb);
                     }
                     else
                         sendHttpResponse(tpcb, 400, "Alert!!\r\n");
@@ -374,7 +431,7 @@ err_t my_recv_function(void *arg, struct tcp_pcb *tpcb,
 
 err_t my_sent_function(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     if (handler.moretosend) {
-        continueSendingFileContents(tpcb);
+        continueSendingResponse(tpcb);
         return ERR_OK;
     } else {
         tcp_close(tpcb);

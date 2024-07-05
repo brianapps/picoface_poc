@@ -318,26 +318,6 @@ void init_file_system() {
             printf("Mount failed, after formatting\n");
         }
     }
-
-    struct pico_fsstat_t stat;
-    pico_fsstat(&stat);
-    printf("FS: blocks %d, block size %d, used %d\n", (int)stat.block_count, (int)stat.block_size,
-           (int)stat.blocks_used);
-
-
-    printf("MKDIR %d\n", pico_mkdir("/z80"));
-
-    int dir = pico_dir_open("/");
-
-    if (dir > 0) {
-        struct lfs_info info;
-        while (pico_dir_read(dir, &info) > 0) {
-            printf("%s (%d)\n", info.name, info.size);
-        }
-
-
-        pico_dir_close(dir);
-    } 
 }
 
 
