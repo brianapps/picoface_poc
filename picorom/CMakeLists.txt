@@ -24,7 +24,7 @@ if(WIN32)
 endif()
 # ====================================================================================
 
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -38,9 +38,11 @@ project(picorom C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+add_subdirectory(littlefs-lib)
+
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom picorom.c rom.c nmi.c manic.c knight.c lz4.c)
+add_executable(picorom picorom.c rom.c nmi.c manic.c knight.c lz4.c http_server.c)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")
@@ -62,12 +64,19 @@ target_include_directories(picorom PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts or any other standard includes, if required
 )
 
+target_compile_definitions(picorom PRIVATE
+        WIFI_SSID=\"${WIFI_SSID}\"
+        WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
+        )
+
 # Add any user requested libraries
 target_link_libraries(picorom 
         hardware_pio
         pico_multicore
-        
+        pico_cyw43_arch_lwip_poll
         )
+
+target_link_libraries(picorom littlefs-lib)
 
 pico_add_extra_outputs(picorom)
 

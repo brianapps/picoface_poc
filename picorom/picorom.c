@@ -4,6 +4,11 @@
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
 #include "hardware/pio.h"
+#include "pico/cyw43_arch.h"
+
+#include "pico_hal.h"
+#include "http_server.h"
+
 
 #include "blink.pio.h"
 #include "lz4.h"
@@ -46,8 +51,6 @@ const uint8_t PIN_NMI = 27;
 const uint MY_SM = 0;
 const uint SM_OUTDATA = 1;
 
-
-static queue_t eventqueue;
 
 
 struct MYSTATE {
@@ -308,11 +311,38 @@ void process_nmi_request() {
 
 }
 
+void init_file_system() {
+       if (pico_mount(false) != LFS_ERR_OK) {
+        printf("Mount failed, try formatting\n");
+        if (pico_mount(true) != LFS_ERR_OK) {
+            printf("Mount failed, after formatting\n");
+        }
+    }
+
+    struct pico_fsstat_t stat;
+    pico_fsstat(&stat);
+    printf("FS: blocks %d, block size %d, used %d\n", (int)stat.block_count, (int)stat.block_size,
+           (int)stat.blocks_used);
+
+
+    printf("MKDIR %d\n", pico_mkdir("/z80"));
+
+    int dir = pico_dir_open("/");
+
+    if (dir > 0) {
+        struct lfs_info info;
+        while (pico_dir_read(dir, &info) > 0) {
+            printf("%s (%d)\n", info.name, info.size);
+        }
+
+
+        pico_dir_close(dir);
+    } 
+}
+
 
 int main() {
     stdio_init_all();
-
-    queue_init(&eventqueue, 1, 16);
 
 
     memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
@@ -330,25 +360,59 @@ int main() {
     gpio_put(PIN_RESET, false);
     gpio_set_dir(PIN_RESET, true);    
 
-     gpio_init(PIN_NMI);
-     gpio_put(PIN_NMI, true);
-     gpio_set_dir(PIN_NMI, true);    
+    gpio_init(PIN_NMI);
+    gpio_put(PIN_NMI, true);
+    gpio_set_dir(PIN_NMI, true);    
 
 
     sleep_ms(1000);
     printf("Started %d\n", FGH_ROM_SIZE);
     printf("SNA: %d\n", MANIC_DATA[0]);
+    init_file_system();
 
+    if (cyw43_arch_init()) {
+        printf("failed to initialise\n");
+        return 1;
+    }
+
+    cyw43_arch_enable_sta_mode();
+
+    printf("Connecting to Wi-Fi...\n");
+
+    if (cyw43_arch_wifi_connect_async(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK) != 0) {
+        printf("failed to connect.\n");
+        return 1;
+    }
     uint32_t c = 0;
 
     uint8_t* nmi_rom_data = rom_data + 16384;
 
+    bool areConnected = false;
+
 
     while (true) {
-        //uint8_t event;
-        //queue_remove_blocking(&eventqueue, &event);
-        //printf("Queue popped %d\n", event);
+        #if PICO_CYW43_ARCH_POLL
+                // if you are using pico_cyw43_arch_poll, then you must poll periodically from your
+                // main loop (not from a timer) to check for Wi-Fi driver or lwIP work that needs to be done.
+                cyw43_arch_poll();
+                // you can poll as often as you like, however if you have nothing else to do you can
+                // choose to sleep until either a specified time, or cyw43_arch_poll() has work to do:
+                //cyw43_arch_wait_for_work_until(make_timeout_time_ms(2));
+        #else
+                // if you are not using pico_cyw43_arch_poll, then WiFI driver and lwIP work
+                // is done via interrupt in the background. This sleep is just an example of some (blocking)
+                // work you might be doing.
+        #endif
         sleep_ms(2);
+
+        bool linkup = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP;
+        if (linkup != areConnected) {
+            printf("WIFI connected: %d\n", linkup);
+            if (linkup) {
+                start_http_server();
+            }
+            areConnected = linkup;
+        }
 
         if (nmi_rom_data[0] == 255) {
             process_nmi_request();
@@ -370,30 +434,16 @@ int main() {
                     printf("Not issuing NMI because one is already active\n");
                 }
                 else {
-                    //memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
                     nmi_rom_data[0] = 0;
                     rom_state.flags |= 2;
                     gpio_put(PIN_NMI, false);
                     sleep_ms(3);
                     gpio_put(PIN_NMI, true);
-                    // sleep_ms(2000);
-
-                    // uint8_t* scr = rom_data + 16384 + 0x2000;
-
-                    // for (uint l = 0; l < 108; l++) {
-                    //     for (uint c = 0; c < 64; c++) {
-                    //         printf("%02X", *scr);
-                    //         scr++;
-                    //     }
-                    //     printf("\n");
-                    // }
-
                 }
             }
             else {
                 printf("Switching ROM now..\n");
                 memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
-                //rom_data[5433] = 'a' + c % 32;
                 c++;
                 rom_state.flags = (rom_state.flags & 1) ? 0 : 1;
                 rom_state.writable = 0;
