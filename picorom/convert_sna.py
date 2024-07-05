@@ -1,9 +1,17 @@
 import pathlib
+import lz4.block
 
 
 
 def convert_sna(sna_file_input, name : str):
     snadata = pathlib.Path(sna_file_input).read_bytes()
+
+    if len(snadata) != 48 * 1024 + 27:
+        raise("SNA is wrong size")
+    
+    snadata = lz4.block.compress(snadata, mode='high_compression', store_size=False, compression=12)
+
+    print(f"{name} compressed to {len(snadata)} bytes.")
 
 
     with open(f"{name}.c", "w") as fp:
@@ -25,3 +33,4 @@ def convert_sna(sna_file_input, name : str):
 
 convert_sna('sna/Manic Miner.sna', 'manic')
 convert_sna('sna/Knight.sna', 'knight')
+convert_sna('sna/matchday2.sna', 'matchday2')

@@ -229,8 +229,8 @@ void __time_critical_func(do_my_pio)() {
     serverom();
 }
 
-
 static uint8_t sna_buffer[49179];
+static uint8_t sna_load_buffer[49179];
 
 extern const uint8_t MANIC_DATA[];
 extern const uint32_t MANIC_SIZE;
@@ -255,15 +255,17 @@ void process_nmi_request() {
 
         if (nmi_rom_data[2] == 1) {
             printf("Loading knight");
-            current_sna_data = KNIGHT_DATA;
-            current_sna_size = KNIGHT_SIZE;
+            LZ4_decompress_fast(KNIGHT_DATA, sna_load_buffer, 49179);
+            current_sna_data = sna_load_buffer;
+            current_sna_size = 49179;
         } else if (nmi_rom_data[2] == 255) {
             printf("Loading Internal");
             current_sna_data = sna_buffer;
             current_sna_size = sizeof(sna_buffer);
         } else {
-            current_sna_data = MANIC_DATA;
-            current_sna_size = MANIC_SIZE;
+            LZ4_decompress_fast(MANIC_DATA, sna_load_buffer, 49179);
+            current_sna_data = sna_load_buffer;
+            current_sna_size = 49179;
         }
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)

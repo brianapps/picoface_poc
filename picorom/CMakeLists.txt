@@ -23,6 +23,7 @@ if(WIN32)
     include(${pico-sdk-tools_DIR}/pico-sdk-tools-config-version.cmake)
 endif()
 # ====================================================================================
+
 set(PICO_BOARD pico CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
