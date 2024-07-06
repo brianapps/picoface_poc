@@ -2,15 +2,17 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
-#include "pico/util/queue.h"
 #include "hardware/pio.h"
 #include "pico/cyw43_arch.h"
 
-#include "pico_hal.h"
+
 #include "http_server.h"
+#include "littlefs-lib/pico_hal.h"
 
 
 #include "blink.pio.h"
+
+#define LZ4_STATIC_LINKING_ONLY
 #include "lz4.h"
 
 extern const uint8_t FGH_ROM[];
@@ -232,20 +234,35 @@ void __time_critical_func(do_my_pio)() {
     serverom();
 }
 
+#define SNA_SIZE 49179
+#define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
+
 static uint8_t sna_buffer[49179];
-static uint8_t sna_load_buffer[49179];
+static uint8_t sna_load_buffer[SNA_LOAD_SIZE];
 
-extern const uint8_t MANIC_DATA[];
-extern const uint32_t MANIC_SIZE;
+// extern const uint8_t MANIC_DATA[];
+// extern const uint32_t MANIC_SIZE;
 
-extern const uint8_t KNIGHT_DATA[];
-extern const uint32_t KNIGHT_SIZE;
+// extern const uint8_t KNIGHT_DATA[];
+// extern const uint32_t KNIGHT_SIZE;
 
 const uint8_t* current_sna_data = NULL;
 uint32_t current_sna_offset =  0;
 uint32_t current_sna_size = 0;
 
 uint32_t current_sna_write_offset = 0;
+
+
+void load_snapshot_file(const char* filename) {
+    int file = pico_open(filename, LFS_O_RDONLY);
+    size_t file_size = pico_size(file);
+    pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
+    pico_close(file);
+    LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
+
+    current_sna_data = sna_load_buffer;
+    current_sna_size = SNA_SIZE;            
+}
 
 
 void process_nmi_request() {
@@ -258,17 +275,15 @@ void process_nmi_request() {
 
         if (nmi_rom_data[2] == 1) {
             printf("Loading knight");
-            LZ4_decompress_fast(KNIGHT_DATA, sna_load_buffer, 49179);
-            current_sna_data = sna_load_buffer;
-            current_sna_size = 49179;
+            load_snapshot_file("knight.snaz");
         } else if (nmi_rom_data[2] == 255) {
             printf("Loading Internal");
             current_sna_data = sna_buffer;
             current_sna_size = sizeof(sna_buffer);
         } else {
-            LZ4_decompress_fast(MANIC_DATA, sna_load_buffer, 49179);
+            load_snapshot_file("manic.snaz");
             current_sna_data = sna_load_buffer;
-            current_sna_size = 49179;
+            current_sna_size = SNA_SIZE;
         }
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
@@ -347,7 +362,6 @@ int main() {
 
     sleep_ms(1000);
     printf("Started %d\n", FGH_ROM_SIZE);
-    printf("SNA: %d\n", MANIC_DATA[0]);
     init_file_system();
 
     if (cyw43_arch_init()) {
