@@ -261,7 +261,13 @@ uint32_t current_sna_size = 0;
 uint32_t current_sna_write_offset = 0;
 
 
-void load_snapshot_file(const char* filename) {
+void load_snapshot_file(const char* fileAndExt) {
+    char filename[128];
+    int filePartLen = strlen(fileAndExt);
+    memcpy(filename, fileAndExt, filePartLen);
+    filename[filePartLen] = '.';
+    strcpy(filename + filePartLen + 1, fileAndExt + filePartLen + 1);
+    printf("File name and extension: %s\n", filename);
     int file = pico_open(filename, LFS_O_RDONLY);
     size_t file_size = pico_size(file);
     pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
@@ -295,25 +301,27 @@ void nmi_action_list_sna() {
     struct lfs_info info;
 
     while (pico_dir_read(dir, &info) > 0) {
-        if (info.type == LFS_TYPE_REG && stringendswith(info.name, ".snaz")) {
-            if (foundsofar >= start) {
-                int index = foundsofar - start;
-                if (index >= 10) {
-                    nmi_rom_data[destoffset + 1] = 1;
-                    break;
+        if (info.type == LFS_TYPE_REG) {
+            int filenamelen = strlen(info.name);
+            if (filenamelen > 5 && strcasecmp(info.name + filenamelen - 5, ".snaz") == 0) {
+                if (foundsofar >= start) {
+                    int index = foundsofar - start;
+                    if (index >= 10) {
+                        nmi_rom_data[destoffset + 1] = 1;
+                        break;
+                    }
+                    nmi_rom_data[destoffset] = index + 1;
+                    nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
+                    nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
+
+                    printf("Listing %s\n", info.name);
+                    strcpy(nmi_rom_data + stringoffset, info.name);
+                    nmi_rom_data[stringoffset + filenamelen - 5] = '\0';
+                    stringoffset += filenamelen + 1;
                 }
-                nmi_rom_data[destoffset] = index + 1;
-                nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
-                nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
 
-                printf("Listing %s\n", info.name);
-
-                strcpy(nmi_rom_data + stringoffset, info.name);
-                printf("Stored %s\n", nmi_rom_data + stringoffset);
-                stringoffset += strlen(info.name) + 1;
+                foundsofar++;
             }
-
-            foundsofar++;
         }
 
     }
@@ -340,27 +348,9 @@ void process_nmi_request() {
         uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
-        printf("Name offset: %X\n", nameoffset);
-
-        for (int i = 0; i < 16; ++i) {
-            printf("%02X ", nmi_rom_data[i]);
-        }        
-
         printf("Loading %s\n", nmi_rom_data + nameoffset);
         load_snapshot_file(nmi_rom_data + nameoffset);
 
-        // if (nmi_rom_data[2] == 1) {
-        //     printf("Loading knight");
-        //     load_snapshot_file("knight.snaz");
-        // } else if (nmi_rom_data[2] == 255) {
-        //     printf("Loading Internal");
-        //     current_sna_data = sna_buffer;
-        //     current_sna_size = sizeof(sna_buffer);
-        // } else {
-        //     load_snapshot_file("manic.snaz");
-        //     current_sna_data = sna_load_buffer;
-        //     current_sna_size = SNA_SIZE;
-        // }
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
         //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
@@ -445,7 +435,7 @@ int main() {
     gpio_set_dir(PIN_NMI, true);    
 
 
-    sleep_ms(2000);
+    sleep_ms(200);
     printf("Started %d\n", FGH_ROM_SIZE);
     printf("Busctrl->priority %X\n", bus_ctrl_hw->priority);
     init_file_system();
