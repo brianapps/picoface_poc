@@ -300,6 +300,9 @@ void nmi_action_list_sna() {
     int16_t foundsofar = 0;
     struct lfs_info info;
 
+    nmi_rom_data[destoffset] = 0;
+    nmi_rom_data[destoffset + 1] = 0;
+
     while (pico_dir_read(dir, &info) > 0) {
         if (info.type == LFS_TYPE_REG) {
             int filenamelen = strlen(info.name);
@@ -323,8 +326,9 @@ void nmi_action_list_sna() {
                 foundsofar++;
             }
         }
-
     }
+
+    
 
 
 

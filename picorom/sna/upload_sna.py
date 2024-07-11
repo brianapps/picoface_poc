@@ -32,6 +32,18 @@ convert_sna('SpyHunter.sna', 'Spy Hunter')
 convert_sna('BoulderDash.sna', 'Boulder Dash')
 convert_sna('Commando.sna', 'Commando')
 
+convert_sna('Commando.sna', 'X0')
+convert_sna('Commando.sna', 'X1')
+convert_sna('Commando.sna', 'X2')
+convert_sna('Commando.sna', 'X3')
+convert_sna('Commando.sna', 'X4')
+convert_sna('Commando.sna', 'X5')
+convert_sna('Commando.sna', 'X6')
+convert_sna('Commando.sna', 'X7')
+convert_sna('Commando.sna', 'X8')
+convert_sna('Commando.sna', 'X9')
+convert_sna('Commando.sna', 'XA')
+
 
 # convert_sna('sna/Wheelie.sna', 'manic')
 # convert_sna('sna/Underwurlde.sna', 'knight')

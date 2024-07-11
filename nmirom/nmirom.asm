@@ -193,7 +193,7 @@ iff2save:
 
 startmenu_def:
     MENU_ITEM 0, 1, 1, .hellomsg, 0
-    MENU_ITEM 's', 3, 2, .savemsg, startmenu.handle_save
+    MENU_ITEM 's' | 0x80, 3, 2, .savemsg, startmenu.handle_save
     MENU_ITEM 'l', 4, 2, .loadmsg, startmenu.handle_load
     MENU_ITEM 'r', 5, 2, .chamgemsg, startmenu.handle_change_rom
     MENU_ITEM 'p', 6, 2, .pokemsg, 0
@@ -234,13 +234,24 @@ showmenu:
     ld a, (hl)
     cp 255   // 255 indicates end of menu items
     ret z
-    inc hl
+    // bit 7 set indicates to ignore this item
+    bit 7, a
+    jr z, 3F
+    ld de, 7
+    add hl, de
+    jr 1B
+
+3:  inc hl
     ld d, (hl)
     inc hl
     ld e, (hl)
     inc hl
     cp 0
     jr z, .dont_show_char
+
+    
+
+
     // if key is lower case then show it as a capital
     cp 'a'
     jr c, 2F
@@ -288,8 +299,11 @@ menukeyhandler:
     ld a, (hl)
     cp 255
     jr z, .checkdone
+    bit 7, a
+    jr nz, .continuecheck
     cp c
     jr z, .foundmatch
+.continuecheck
     ld de, 7
     add hl, de
     jr .checkitems
@@ -338,7 +352,7 @@ menukeyhandler:
 
 
 
-.handler_addr WORD 0    
+
 
 
 
@@ -346,10 +360,25 @@ menukeyhandler:
 
 
 loadscreen:
+    ld de, 0
+
+.fetchlist
     ld ix, 0
     ld (ix + 1), ACTION_SNA_LIST
-    ld de, 0
     ld (ix + 2), de
+
+    ; enable the previous action if fetching something that doesn't start at zero
+    ld hl, .menuprev
+    ld a, e
+    or d
+    jr z, .disableprev
+.enableprev
+    res 7, (hl)
+    jr 1F
+.disableprev
+    set 7, (hl)
+1:
+    ld (.startpos), de
     ld hl, spare_space
     ld (ix + 4), hl
     ld (ix + 0), 255
@@ -357,11 +386,46 @@ loadscreen:
     cp 255
     jr z, 1B
 
-    ld a, (spare_space)
-    ld b, a
 
+    ; enable the next action if there is more to fetch
+    ld hl, .menunext
+    ld a, (spare_space + 1) ; more names available? 1 if so
+    cp 1
+    jr z, .enablenext
+.disablenext
+    set 7, (hl)
+    jr 1F
+.enablenext
+    res 7, (hl)
+1:
+
+    ld a, (spare_space) ; count of entries
+    ld b, a
+    xor a
+    ld de, 7
+    ld hl, .menusnaps
+
+.loopkeyenabledstate:
+    cp b  // if a < b then c is set, a >= b then c is reset
+    jr c, .enablekey
+.disablekey
+    set 7, (hl)
+    jr .keycontinue
+.enablekey
+    res 7, (hl)
+.keycontinue
+    add hl, de
+    inc a
+    cp 10
+    jr nz, .loopkeyenabledstate
+
+    ld a, (spare_space) ; count of entries
+    cp 0
+    jr z, .showthemenu
+    ld b, a
     ld hl, spare_space + 2
     ld de, .menusnaps + 3
+
 .updatemenustrings
     push bc
 
@@ -379,15 +443,19 @@ loadscreen:
     ; ld hl, spare_space + 22
     ; ld (.menusnaps + 3), hl
 
+.showthemenu
     ld hl, .menu
     call showmenu
     ld hl, .menu
     jp menukeyhandler
 
+.snaphandlerzero
+    ld a, 9
+    jr 1F
+
 .snaphandler:
-    cp '0'
-    jr z, .loadtenth
     sub '1'
+1:
     ld b, 0
     ld c, a
     ld hl, spare_space + 2
@@ -397,18 +465,31 @@ loadscreen:
     inc hl
     ld d, (hl)
     ex hl, de
-
-    ;ld hl, 0x25e1
     jp loadsnapshot
 
 
 
+.nextkeyhandler:
+    ld hl, (.startpos)
+    ld de, 10
+    add hl, de
+    ex hl, de
+    jp .fetchlist
 
-.loadtenth
-    ret
+.prevkeyhandler:
+    ld hl, (.startpos)
+    ld de, 10
+    sub hl, de
+    ex hl, de
+    jp .fetchlist
+
+
+
 
 .exithandler:    
     ret
+
+.startpos WORD 0
 
 .titlemsg DZ "Load snapshot"
 .snap0 BYTE 0
@@ -422,8 +503,10 @@ loadscreen:
     MENU_ITEM 0, 1, 1, .titlemsg, 0
 
     MENU_ITEM 'x', 14, 2, .exit, .exithandler
-    MENU_ITEM 'n', 14, 9, .next, 0
-    MENU_ITEM 'p', 14, 16, .prev, 0
+.menuprev
+    MENU_ITEM 'p', 14, 9, .prev, .prevkeyhandler
+.menunext
+    MENU_ITEM 'n', 14, 20, .next, .nextkeyhandler
 .menusnaps:
     MENU_ITEM '1', 3, 2, .snap0, .snaphandler
     MENU_ITEM '2', 4, 2, .snap0, .snaphandler
@@ -434,82 +517,11 @@ loadscreen:
     MENU_ITEM '7', 9, 2, .snap0, .snaphandler
     MENU_ITEM '8', 10, 2, .snap0, .snaphandler
     MENU_ITEM '9', 11, 2, .snap0, .snaphandler
-    MENU_ITEM '0', 12, 2, .snap0, .snaphandler
+    MENU_ITEM '0', 12, 2, .snap0, .snaphandlerzero
     MENU_END
 
 
 
-loadscreenold:
-   call clearscreen
-
-    ld de, 0x0101
-    ld hl, .titlemsg
-    call putstring
-
-    ld de, 0x0302
-    ld hl, .snap1
-    call putstring
-
-    ld de, 0x0402
-    ld hl, .snap2
-    call putstring
-
-    ld de, 0x0502
-    ld hl, .snap3
-    call putstring    
-
-    ld de, 0x0602
-    ld hl, .exitmsg
-    call putstring
-
-
-.keyhandling
-    call waitforkeypress
-
-
-
-    cp '1'
-    jr nz, 1F
-    ld de, 0x0302
-    call reverseattr
-    call waitforkeyrelease
-    xor a
-    jp loadsnapshot
-
-1:  cp '2'
-    jr nz, 1F
-    ld de, 0x0402
-    call reverseattr
-    call waitforkeyrelease
-    ld a, 1
-    jp loadsnapshot
-
-
-1:  cp '3'
-    jr nz, 1F
-    ld de, 0x0502
-    call reverseattr
-    call waitforkeyrelease
-    ld a, 255
-    jp loadsnapshot    
-
-1:  cp 'x'
-    jr nz, 1F
-    ld de, 0x0602
-    call reverseattr
-    call waitforkeyrelease
-    ret
-
-1:
-    call waitforkeyrelease
-    jr .keyhandling
-    ret
-
-.titlemsg DZ "Load snapshotx"
-.snap1 DZ "1-Manic Miner"
-.snap2 DZ "2-Knight Lore"
-.snap3 DZ "3-Internal snapshot"
-.exitmsg DZ "X-Exit"
 
      STRUCT SNAHEADER
 I    BYTE
