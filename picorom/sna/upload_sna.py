@@ -18,18 +18,19 @@ def convert_sna(sna_file_input, name : str):
     requests.post(f"http://192.168.1.140/{name}.snaz", data=snadata)
 
 
-# convert_sna('Manic Miner.sna', 'ManicMiner')
-# convert_sna('Knight.sna', 'KnightLore')
-# convert_sna('matchday2.sna', 'MatchDay2')
-# convert_sna('Wheelie.sna', 'Wheelie')
-# convert_sna('Underwurlde.sna', 'Underwurlde')
-# convert_sna('Fist.sna', 'ExplodingFist')
-# convert_sna('Atic.sna', 'AticAtac')
-
-#convert_sna('Sabre.sna', 'Sabre Wulf')
-
-convert_sna('Jetman.sna', 'LunarJetman')
-convert_sna('jetpack.sna', 'JetPack')
+convert_sna('Manic Miner.sna', 'Manic Miner')
+convert_sna('Knight.sna', 'Knight Lore')
+convert_sna('matchday2.sna', 'Match Day II')
+convert_sna('Wheelie.sna', 'Wheelie')
+convert_sna('Underwurlde.sna', 'Underwurlde')
+convert_sna('Fist.sna', 'Exploding Fist')
+convert_sna('Atic.sna', 'Atic Atac')
+convert_sna('Sabre.sna', 'Sabre Wulf')
+convert_sna('Jetman.sna', 'Lunar Jetman')
+convert_sna('jetpack.sna', 'Jet Pack')
+convert_sna('SpyHunter.sna', 'Spy Hunter')
+convert_sna('BoulderDash.sna', 'Boulder Dash')
+convert_sna('Commando.sna', 'Commando')
 
 
 # convert_sna('sna/Wheelie.sna', 'manic')

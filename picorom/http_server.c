@@ -53,6 +53,39 @@ struct HttpHandler {
 struct HttpHandler handler;
 
 
+int hexDigitToInt(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    else if (c >= 'A' && c <= 'F') {
+        return 10 + c - 'A';
+    }
+    else
+        return -1;
+}
+
+
+void copyPath(char* dest, const char* src) {
+    while (*src != '\0') {
+        if (*src == '%') {
+            int h1 = hexDigitToInt(src[1]);
+            if (h1 >= 0) {
+                int h2 = hexDigitToInt(src[2]);
+                if (h2 >= 0) {
+                    *dest = h1 * 16 + h2;
+                    dest++;
+                    src += 3;
+                    continue;
+                }
+            }
+        }
+        *dest = *src;
+        dest++;
+        src++;
+    }
+    *dest = '\0';
+}
+
 void sendHttpResponse(struct tcp_pcb *pcb, uint status, const char* msg) {
     char buffer[128];
     int len = sprintf(buffer, "HTTP/1.1 %d OK\r\n", status);
@@ -280,8 +313,8 @@ int parse_recv_buffer(struct tcp_pcb *tpcb, uint8_t* buffer, size_t buffer_len) 
 
             case PARSE_PATH:
                 if (!appendToBufferUnlessSpace(c)) {
-                    printf("Path: %s\n", handler.parseBuffer);
-                    strcpy(handler.path, handler.parseBuffer);
+                    copyPath(handler.path, handler.parseBuffer);
+                    printf("Path: %s\n", handler.path);
                     // check the path
                     handler.parsePosition = 0;
                     handler.currentStep = PARSE_PROTOCOL;
