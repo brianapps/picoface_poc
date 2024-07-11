@@ -4,6 +4,7 @@
 #include "pico/multicore.h"
 #include "hardware/pio.h"
 #include "pico/cyw43_arch.h"
+#include "hardware/structs/bus_ctrl.h"
 
 
 #include "http_server.h"
@@ -238,13 +239,20 @@ void __time_critical_func(do_my_pio)() {
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
 
 static uint8_t sna_buffer[49179];
-static uint8_t sna_load_buffer[SNA_LOAD_SIZE];
+static uint8_t sna_load_buffer[SNA_LOAD_SIZE + 1024];
 
 // extern const uint8_t MANIC_DATA[];
 // extern const uint32_t MANIC_SIZE;
 
 // extern const uint8_t KNIGHT_DATA[];
 // extern const uint32_t KNIGHT_SIZE;
+
+#define ACTION_BEGIN_SNA_READ 0x01
+#define ACTION_SNA_READ_NEXT 0x02
+#define ACTION_SNA_BEGIN_WRITE 0x03
+#define ACTION_SNA_NEXT_WRITE 0x04
+#define ACTION_SNA_LIST 5
+
 
 const uint8_t* current_sna_data = NULL;
 uint32_t current_sna_offset =  0;
@@ -258,10 +266,63 @@ void load_snapshot_file(const char* filename) {
     size_t file_size = pico_size(file);
     pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
     pico_close(file);
-    LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
+    int res = LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
+    printf("Decompress result: %d, original size: %d\n", res, file_size);
 
     current_sna_data = sna_load_buffer;
     current_sna_size = SNA_SIZE;            
+}
+
+bool stringendswith(const char* str, const char* suffix) {
+    int suffixlen = strlen(suffix);
+    int len = strlen(str);
+    if (suffixlen > len) {
+        return false;
+    }
+    return strcasecmp(str + len - suffixlen, suffix) == 0;
+}
+
+void nmi_action_list_sna() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint16_t stringoffset = destoffset + 22;
+
+    printf("List snaps starting at %d and storing at %X\n", start, destoffset);
+
+    int dir = pico_dir_open("/");
+    int16_t foundsofar = 0;
+    struct lfs_info info;
+
+    while (pico_dir_read(dir, &info) > 0) {
+        if (info.type == LFS_TYPE_REG && stringendswith(info.name, ".snaz")) {
+            if (foundsofar >= start) {
+                int index = foundsofar - start;
+                if (index >= 10) {
+                    nmi_rom_data[destoffset + 1] = 1;
+                    break;
+                }
+                nmi_rom_data[destoffset] = index + 1;
+                nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
+                nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
+
+                printf("Listing %s\n", info.name);
+
+                strcpy(nmi_rom_data + stringoffset, info.name);
+                printf("Stored %s\n", nmi_rom_data + stringoffset);
+                stringoffset += strlen(info.name) + 1;
+            }
+
+            foundsofar++;
+        }
+
+    }
+
+
+
+    pico_dir_close(dir);
+
+
 }
 
 
@@ -270,21 +331,36 @@ void process_nmi_request() {
     uint8_t action = nmi_rom_data[1];
     printf("Action to process: %d\n", action);
 
-    if (action == 1) {
-        uint16_t headeroffset =  (nmi_rom_data[4] << 8) |  nmi_rom_data[3];
+    for (int i = 0; i < 16; ++i) {
+        printf("%02X ", nmi_rom_data[i]);
+    }
+    printf("\n");
 
-        if (nmi_rom_data[2] == 1) {
-            printf("Loading knight");
-            load_snapshot_file("knight.snaz");
-        } else if (nmi_rom_data[2] == 255) {
-            printf("Loading Internal");
-            current_sna_data = sna_buffer;
-            current_sna_size = sizeof(sna_buffer);
-        } else {
-            load_snapshot_file("manic.snaz");
-            current_sna_data = sna_load_buffer;
-            current_sna_size = SNA_SIZE;
-        }
+    if (action == ACTION_BEGIN_SNA_READ) {
+        uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+        uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+
+        printf("Name offset: %X\n", nameoffset);
+
+        for (int i = 0; i < 16; ++i) {
+            printf("%02X ", nmi_rom_data[i]);
+        }        
+
+        printf("Loading %s\n", nmi_rom_data + nameoffset);
+        load_snapshot_file(nmi_rom_data + nameoffset);
+
+        // if (nmi_rom_data[2] == 1) {
+        //     printf("Loading knight");
+        //     load_snapshot_file("knight.snaz");
+        // } else if (nmi_rom_data[2] == 255) {
+        //     printf("Loading Internal");
+        //     current_sna_data = sna_buffer;
+        //     current_sna_size = sizeof(sna_buffer);
+        // } else {
+        //     load_snapshot_file("manic.snaz");
+        //     current_sna_data = sna_load_buffer;
+        //     current_sna_size = SNA_SIZE;
+        // }
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
         //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
@@ -292,7 +368,7 @@ void process_nmi_request() {
         //memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
         current_sna_offset = 27;
     }
-    else if (action == 2) {
+    else if (action == ACTION_SNA_READ_NEXT) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
@@ -307,21 +383,23 @@ void process_nmi_request() {
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
 
-    }  else if (action == 3) {
+    }  else if (action == ACTION_SNA_BEGIN_WRITE) {
         uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         printf("Start SNA save, head destination: %X\n", headeroffset);
         memcpy(sna_buffer, nmi_rom_data + headeroffset, 27);
         current_sna_write_offset = 27;
-    }  else if (action == 4) {
+    }  else if (action == ACTION_SNA_NEXT_WRITE) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
         uint32_t tocopy = MIN(count, sizeof(sna_buffer) - current_sna_write_offset);
         printf("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
         memcpy(sna_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
         current_sna_write_offset += tocopy;
+    } else if (action == ACTION_SNA_LIST) {
+        nmi_action_list_sna();
     }
 
-
+    sleep_ms(1);
     nmi_rom_data[0] = 0;
 
 }
@@ -336,8 +414,15 @@ void init_file_system() {
 }
 
 
+#define ENABLE_WIFI
+
 int main() {
+
+
+
     stdio_init_all();
+
+    bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_PROC1_BITS;
 
 
     memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
@@ -360,10 +445,12 @@ int main() {
     gpio_set_dir(PIN_NMI, true);    
 
 
-    sleep_ms(1000);
+    sleep_ms(2000);
     printf("Started %d\n", FGH_ROM_SIZE);
+    printf("Busctrl->priority %X\n", bus_ctrl_hw->priority);
     init_file_system();
 
+    #ifdef ENABLE_WIFI
     if (cyw43_arch_init()) {
         printf("failed to initialise\n");
         return 1;
@@ -377,6 +464,11 @@ int main() {
         printf("failed to connect.\n");
         return 1;
     }
+
+    #endif
+
+    printf("Busctrl->priority %X\n", bus_ctrl_hw->priority);
+
     uint32_t c = 0;
 
     uint8_t* nmi_rom_data = rom_data + 16384;
@@ -385,6 +477,7 @@ int main() {
 
 
     while (true) {
+        #ifdef ENABLE_WIFI
         #if PICO_CYW43_ARCH_POLL
                 // if you are using pico_cyw43_arch_poll, then you must poll periodically from your
                 // main loop (not from a timer) to check for Wi-Fi driver or lwIP work that needs to be done.
@@ -397,8 +490,10 @@ int main() {
                 // is done via interrupt in the background. This sleep is just an example of some (blocking)
                 // work you might be doing.
         #endif
-        sleep_ms(2);
+        #endif
+        sleep_ms(1);
 
+        #ifdef ENABLE_WIFI
         bool linkup = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP;
         if (linkup != areConnected) {
             printf("WIFI connected: %d\n", linkup);
@@ -407,6 +502,7 @@ int main() {
             }
             areConnected = linkup;
         }
+        #endif
 
         if (nmi_rom_data[0] == 255) {
             process_nmi_request();
@@ -423,6 +519,7 @@ int main() {
 
             if (count < 1000) {
                 printf("Try to send nmi: %d\n", count);
+                memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
 
                 if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
                     printf("Not issuing NMI because one is already active\n");

@@ -18,9 +18,18 @@ def convert_sna(sna_file_input, name : str):
     requests.post(f"http://192.168.1.140/{name}.snaz", data=snadata)
 
 
-convert_sna('sna/Manic Miner.sna', 'manic')
-convert_sna('sna/Knight.sna', 'knightl')
-convert_sna('sna/matchday2.sna', 'knight')
+# convert_sna('Manic Miner.sna', 'ManicMiner')
+# convert_sna('Knight.sna', 'KnightLore')
+# convert_sna('matchday2.sna', 'MatchDay2')
+# convert_sna('Wheelie.sna', 'Wheelie')
+# convert_sna('Underwurlde.sna', 'Underwurlde')
+# convert_sna('Fist.sna', 'ExplodingFist')
+# convert_sna('Atic.sna', 'AticAtac')
+
+#convert_sna('Sabre.sna', 'Sabre Wulf')
+
+convert_sna('Jetman.sna', 'LunarJetman')
+convert_sna('jetpack.sna', 'JetPack')
 
 
 # convert_sna('sna/Wheelie.sna', 'manic')

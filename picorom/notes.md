@@ -211,3 +211,41 @@ list_snapshots: start_index, buffer, buffer_length -> success/fail, entries read
 
 
 
+## 11 Jul 2024
+
+A lot of work has gone on and a lot of problems. Also was away for a week. I'll try and recall what has gone on.
+
+Implemented technique to save snapshot into ram and restore it later. I wasn't able to find a way to obtain the current border colour so this will have to be missing on saved snapshots.
+Added lz4 frame compression on snapshot loading.
+
+Got a PicoW and went about trying to implement a http server with file support. This was an utter pain. The built in lwip webserver is really designed to serve static web pages and not really suited for the REST style API I want to implement. For example there is no way to simply return a block of data to a GET request. Instead this need to be served up as a file -- which can be crafted to use server side includes. This is a bit of a pain.
+
+I then looked at spent a fair amount of time investigating https://gitlab.com/slimhazard/picow_http. This looked a lot more promising and has some quite extensive documentation. However after quite a bit of work, I hit problems attempt to POST more than 64KB of data. It seems that the entire design is pretty much hardcoded to use 16bit offsets and this is quite tricky to break. In addition the library acculumates everything in buffers before invoking any callback, lwiP is limited to 64KB buffer so this means a redesign is required to big POSTs into chunks that can be processed piecemeal.
+
+Next time was then to roll my own HTTP server using raw lwIP TCP sockets. This was not fun. Wrote a very crude parser that processes HTTP headers without building up dynamically allocated buffers. Basically the system is designed to consume the entire lwIP buffer everytime something arrives. It was tricky to get things working but was able to implement a very basic REST API to store things in littleFS.
+
+Performed a bit of restructing to the NMI ROM to make menu handling easier and implemented RPC message to list snapshots and load them by name. It's still very basic at the moment because I hit huge stability issues.
+
+As soon as I started using the PicoW things went pear shaped. I'm not 100% convinced I've sorted them but they include:
+
+- GAL chip not properly seated, which caused intermittent hangs.
+- Loose wires as the board was teased out and replaced.
+- Major instabilities I'm not 100% convinced that the WiFi is effecting things. Disabling WiFi improved things a bit but the system was not at all stable. Sometimes it would work but often snapshot loading would cause hangs and so on.
+
+I felt the project had maybe reached the end until I started thinking about RAM contention. After the system was absolutely rock solid for over an hour before. 
+
+Adding the line:
+```
+ bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_PROC1_BITS;
+```
+Made a world of difference. This gives CORE1 priority over CORE0 for memory and made the system work perfectly (maybe 50 odd snapshot loads) with the WiFI disabled. However I did see issues with WIFI was re-enabled.
+
+That said, when I retested the following day things seem to be solid with the WiFi enabled. That is apart from a bug in the NMI rom where the IX register wasn't being restored and would cause Underwurlde to crash when exiting the NMI without loading a snapshot. With the fixed things seem to be back to track. However I'm reluctant to tempt fate.
+
+Things to do include:
+- Look out for a nicer font for the NMI menu
+- Restore border colour in snapshot load
+- Save snapshot to flash
+- Support paging in snapshot screen
+- Support loading snapshot 0 (this should be 10)
+- Do some url decoding the the http server (so spaces can be handled)

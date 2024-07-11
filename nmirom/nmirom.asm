@@ -7,7 +7,8 @@ SCREEN_ATTRIB: equ 0x5800
 BORDCR: equ  0x5C48
 
 ACTION_BEGIN_SNA_READ: equ 0x01
-// param1 = destination for sna header
+// param1 = name pointer
+// param2 = sna header offset
 
 
 ACTION_SNA_READ_NEXT equ 0x02
@@ -22,6 +23,29 @@ ACTION_SNA_NEXT_WRITE equ 0x04
 // param1 = source of data
 // param2 = length to write
 
+
+ACTION_SNA_LIST equ 0x05
+// WORD param1  = start number
+// WORD param2 = destination to write results
+//  
+// RESULTS are
+//     BYTE countReturned  (will be no more than 10)
+//     BYTE moreAviable  (non-zero if true)
+//     WORD namepointer[countReturned]
+//     String data follows
+
+
+    MACRO MENU_ITEM key, y, x, msg, handler
+        BYTE key
+        BYTE y
+        BYTE x
+        WORD msg
+        WORD handler
+    ENDM
+
+    MACRO MENU_END
+        BYTE 255
+    ENDM
 
 
 
@@ -64,7 +88,7 @@ startmenu:
     ld (sna_on_entry + SNAHEADER.IY), IY
     ld sp, stack_top
 
-    push af, bc, de, hl
+    push af, bc, de, hl, ix
 
     push af
     pop hl
@@ -80,11 +104,16 @@ startmenu:
     ld (sna_on_entry + SNAHEADER.AFx), HL
     ex af, af'
 
+    ld a, (BORDCR)
+    rra
+    rra
+    rra
+    and 0x7
+    ld (sna_on_entry + SNAHEADER.BORD), a    
+
 
     ld (sna_on_entry + SNAHEADER.IX), IX
     ld (sna_on_entry + SNAHEADER.IY), IY
-
-
 
     xor a
     ld (iff2save), a
@@ -105,111 +134,31 @@ startmenu:
 
 
 .interruptsweredisbled:    
-
-
     ld hl, SCREEN
     ld de, screen_save
     ld bc, 6912
     ldir
 
-
 .showtopscreen
-    call clearscreen
+    ld hl, startmenu_def
+    call showmenu
 
-    ld de, 0x0101
-    ld hl, hellomsg
-    call putstring
+    ld hl, startmenu_def
+    jp menukeyhandler    
 
-    ld de, 0x0114
-    ld a, (iff2save)
-    add '0'
-    ld c, a
-    call putchar
-    inc e 
-    ld a, (immoddesave)
-    add '0'
-    ld c, a
-    call putchar
-    inc e 
-    ld a, (BORDCR)
-    rra
-    rra
-    rra
-    and 0x7
-    ld (sna_on_entry + SNAHEADER.BORD), a
-    add '0'
-    ld c, a
-    call putchar
-
-
-    ld de, 0x0302
-    ld hl, savemsg
-    call putstring
-
-    ld de, 0x0402
-    ld hl, loadmsg
-    call putstring
-    
-    ld de, 0x0502
-    ld hl, chamgemsg
-    call putstring
-
-    ld de, 0x0602
-    ld hl, exitmsg
-    call putstring
-
-
-.keyprocessing:
-
-    call waitforkeypress
-    cp 's'
-    jr nz, 1F
-    ld de, 0x0302
-    call reverseattr
-    call waitforkeyrelease
+.handle_save:
     call savesnapshot
     jr .exittopscreen
 
-1:
-    cp 'l'
-    jr nz, 1F
-    ld de, 0x0402
-    call reverseattr
-    call waitforkeyrelease
+.handle_exit:
+    jr .exittopscreen   
+
+.handle_load:
     call loadscreen
     jr .showtopscreen
-1:
-    cp 'x'
-    jr nz, 1F
-    ld de, 0x0602
-    call reverseattr
-    call waitforkeyrelease
-    jr .exittopscreen    
-1:
-    cp 'r'
-    jr nz, 1F
-    ld de, 0x0502
-    call reverseattr
-    call waitforkeyrelease
-    jp .showtopscreen
 
-1:
-    cp '1'
-    jr nz, 1F
-    call waitforkeyrelease
-
-    ld sp, 16384 + 8000
-    ld hl, 0
-    push hl
-
-    jr exitnmi
-1:
-    jr .keyprocessing
-
-
-   
-
-
+.handle_change_rom:
+    jr .showtopscreen
 
 .exittopscreen
 
@@ -218,7 +167,7 @@ startmenu:
     ld bc, 6912
     ldir
 
-    pop hl, de, bc
+    pop ix, hl, de, bc
 
     ld a, (iff2save)
     cp 0
@@ -242,12 +191,21 @@ iff2save:
     .byte 0
 
 
+startmenu_def:
+    MENU_ITEM 0, 1, 1, .hellomsg, 0
+    MENU_ITEM 's', 3, 2, .savemsg, startmenu.handle_save
+    MENU_ITEM 'l', 4, 2, .loadmsg, startmenu.handle_load
+    MENU_ITEM 'r', 5, 2, .chamgemsg, startmenu.handle_change_rom
+    MENU_ITEM 'p', 6, 2, .pokemsg, 0
+    MENU_ITEM 'x', 7, 2, .exitmsg,  startmenu.handle_exit
+    MENU_END
+.hellomsg DZ "picoFace"
+.savemsg: DZ "Save snapshot"
+.loadmsg: DZ "Load snapshot"
+.chamgemsg: DZ "Change ROM"
+.exitmsg: DZ "Exit"
+.pokemsg: DZ "Poke"
 
-hellomsg: DZ "picoFace"
-savemsg: DZ "S-Save snapshot"
-loadmsg: DZ "L-Load snapshot"
-chamgemsg: DZ "R-Change ROM"
-exitmsg: DZ "X-Exit"
 
 
 sna_on_entry: BLOCK SNAHEADER
@@ -265,7 +223,223 @@ checkkey:
     ret
 
 
+
+// HL points to menu info
+showmenu:
+    push hl
+    call clearscreen
+    pop hl
+
+1:  
+    ld a, (hl)
+    cp 255   // 255 indicates end of menu items
+    ret z
+    inc hl
+    ld d, (hl)
+    inc hl
+    ld e, (hl)
+    inc hl
+    cp 0
+    jr z, .dont_show_char
+    // if key is lower case then show it as a capital
+    cp 'a'
+    jr c, 2F
+    cp 'z' + 1
+    jr nc, 2F
+    add a, 'A' - 'a'
+2:   
+    ld c, a
+    call putchar
+    ld c, '-'
+    call putchar
+
+.dont_show_char:    
+    ld c, (hl)
+    inc hl
+    ld b, (hl)
+    inc hl
+    inc hl
+    inc hl
+
+    ld a, b    // don't show message if NULL
+    or c
+    jr z, 1B
+
+
+    push hl
+    ld hl, bc
+    call putstring
+    pop hl
+    jr 1B
+
+
+// hl points to menu on entry
+menukeyhandler:
+
+    push hl
+    call waitforkeypress
+    pop hl
+    push hl
+
+    // c is now the key pressed
+    ld c, a
+
+.checkitems
+    ld a, (hl)
+    cp 255
+    jr z, .checkdone
+    cp c
+    jr z, .foundmatch
+    ld de, 7
+    add hl, de
+    jr .checkitems
+
+.checkdone
+    call waitforkeyrelease
+    pop hl
+    jr menukeyhandler
+
+
+.foundmatch
+    push bc    // we want to restore c because that holds the keypressed
+
+    inc hl
+    ld d, (hl)
+    inc hl
+    ld e, (hl)
+    inc hl
+    inc hl
+    inc hl
+    ld c, (hl)
+    inc hl
+    ld b, (hl)
+
+    push bc
+    push de
+    call reverseattr
+    call waitforkeyrelease
+    pop de
+    call reverseattr
+
+    pop hl  // handler routine
+    pop bc // c is the key pressed
+
+    ld a, h
+    or l
+    jr z, .nohandler
+    pop de // this is the menu pointer that we no longer need
+    ld a, c
+    jp (hl)
+
+.nohandler
+    pop hl
+    jr menukeyhandler
+
+
+
+
+.handler_addr WORD 0    
+
+
+
+
+
+
 loadscreen:
+    ld ix, 0
+    ld (ix + 1), ACTION_SNA_LIST
+    ld de, 0
+    ld (ix + 2), de
+    ld hl, spare_space
+    ld (ix + 4), hl
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+
+    ld a, (spare_space)
+    ld b, a
+
+    ld hl, spare_space + 2
+    ld de, .menusnaps + 3
+.updatemenustrings
+    push bc
+
+    ld bc, 2
+    ldir
+
+    ld bc, 5
+    ex hl,de
+    add hl, bc
+    ex hl, de
+    pop bc
+
+    djnz .updatemenustrings
+
+    ; ld hl, spare_space + 22
+    ; ld (.menusnaps + 3), hl
+
+    ld hl, .menu
+    call showmenu
+    ld hl, .menu
+    jp menukeyhandler
+
+.snaphandler:
+    cp '0'
+    jr z, .loadtenth
+    sub '1'
+    ld b, 0
+    ld c, a
+    ld hl, spare_space + 2
+    add hl, bc
+    add hl, bc
+    ld e, (hl)
+    inc hl
+    ld d, (hl)
+    ex hl, de
+
+    ;ld hl, 0x25e1
+    jp loadsnapshot
+
+
+
+
+.loadtenth
+    ret
+
+.exithandler:    
+    ret
+
+.titlemsg DZ "Load snapshot"
+.snap0 BYTE 0
+
+.exit DZ "Exit"
+.next DZ "Next"
+.prev DZ "Previous"
+
+.menu     
+
+    MENU_ITEM 0, 1, 1, .titlemsg, 0
+
+    MENU_ITEM 'x', 14, 2, .exit, .exithandler
+    MENU_ITEM 'n', 14, 9, .next, 0
+    MENU_ITEM 'p', 14, 16, .prev, 0
+.menusnaps:
+    MENU_ITEM '1', 3, 2, .snap0, .snaphandler
+    MENU_ITEM '2', 4, 2, .snap0, .snaphandler
+    MENU_ITEM '3', 5, 2, .snap0, .snaphandler
+    MENU_ITEM '4', 6, 2, .snap0, .snaphandler
+    MENU_ITEM '5', 7, 2, .snap0, .snaphandler
+    MENU_ITEM '6', 8, 2, .snap0, .snaphandler
+    MENU_ITEM '7', 9, 2, .snap0, .snaphandler
+    MENU_ITEM '8', 10, 2, .snap0, .snaphandler
+    MENU_ITEM '9', 11, 2, .snap0, .snaphandler
+    MENU_ITEM '0', 12, 2, .snap0, .snaphandler
+    MENU_END
+
+
+
+loadscreenold:
    call clearscreen
 
     ld de, 0x0101
@@ -285,7 +459,7 @@ loadscreen:
     call putstring    
 
     ld de, 0x0602
-    ld hl, exitmsg
+    ld hl, .exitmsg
     call putstring
 
 
@@ -335,6 +509,7 @@ loadscreen:
 .snap1 DZ "1-Manic Miner"
 .snap2 DZ "2-Knight Lore"
 .snap3 DZ "3-Internal snapshot"
+.exitmsg DZ "X-Exit"
 
      STRUCT SNAHEADER
 I    BYTE
@@ -399,13 +574,13 @@ savesnapshot:
     ret
 
 
-
+// enter with hl pointing to the snapshot name string
 loadsnapshot:
     push ix
     ld ix, 0
+    ld (ix + 2), hl
     ld hl, sna_header
-    ld (ix + 2), a
-    ld (ix + 3), hl
+    ld (ix + 4), hl
     ld (ix + 1), ACTION_BEGIN_SNA_READ
     ld (ix + 0), 255
 1:  ld a, (ix)
@@ -544,11 +719,8 @@ putstring:
     ret z
     ld c, a
     call putchar
-    inc e
     inc hl
     jr 1B
-
-
 
 
 putchar:
@@ -562,13 +734,21 @@ putchar:
     ld bc, charbank - 32 * 8
     add hl, bc
 
+    // de holds y/x character position
+    // 
     ld a, d
+    and 0b111
     rrca
     rrca
     rrca
     or e
-    ld d, 0x40
     ld e, a
+
+    ld a, d
+    and 0b00011000
+    or  0b01000000
+    ld d, a
+
     ld b, 8
 
 1   ld a, (hl)
@@ -578,6 +758,7 @@ putchar:
     djnz 1B
 
     pop hl, bc, de, af
+    inc e
     ret
 
 
@@ -596,7 +777,23 @@ reverseattr:
 
     add hl, de
 
-    ld a, 0b111000  // white paper, black ink
+    ld a, (hl)
+    and a, 0b111
+    sla a
+    sla a
+    sla a
+    ld e, a
+    ld a, (hl)
+    and a, 0b111000
+    srl a
+    srl a
+    srl a
+    or e
+    ld e, a
+    ld a, (hl)
+    and 0b11000000
+    or e
+
     ld (hl), a
 
 
@@ -607,17 +804,17 @@ reverseattr:
 
 clearscreen:
     ld hl, SCREEN_ATTRIB
-    ld a, 0b000111  // white paper, black ink
+    ld a, 0b000111  // black paper, white ink
     ld (hl), a
     ld de, SCREEN_ATTRIB + 1
-    ld bc, 255
+    ld bc, 32 * 16 - 1
     ldir
 
     xor a
     ld hl, SCREEN
     ld (hl),a
     ld de, SCREEN + 1
-    ld bc, 2048 - 1
+    ld bc, 32 * 16 * 8 - 1   // clear 16 rows of 32 characters each that is 8 pixels high
     ldir
     ret
 
@@ -640,8 +837,6 @@ waitforkeyrelease:
     call pause
     ret
     
-
-
 
 // FEFF Shift, Z, X, C, V
 // FDFF A, S, D, F, G
@@ -765,10 +960,6 @@ keytable2:
     defb '"', ';', '~', ']','['
     defb 0x13, '=', '+', '-','^'
     defb ' ', '.', ',', '*', '~'    
-
-
-
-
 
 charbank:
     defb 0,0,0,0,0,0,0,0
