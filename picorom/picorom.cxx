@@ -5,6 +5,7 @@
 #include "hardware/pio.h"
 #include "pico/cyw43_arch.h"
 #include "hardware/structs/bus_ctrl.h"
+#include "usb_command_handler.h"
 
 
 #include "http_server.h"
@@ -238,8 +239,8 @@ void __time_critical_func(do_my_pio)() {
 #define SNA_SIZE 49179
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
 
-static uint8_t sna_buffer[49179];
-static uint8_t sna_load_buffer[SNA_LOAD_SIZE + 1024];
+static char sna_buffer[49179];
+static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
 
 // extern const uint8_t MANIC_DATA[];
 // extern const uint32_t MANIC_SIZE;
@@ -254,7 +255,7 @@ static uint8_t sna_load_buffer[SNA_LOAD_SIZE + 1024];
 #define ACTION_SNA_LIST 5
 
 
-const uint8_t* current_sna_data = NULL;
+const char* current_sna_data = NULL;
 uint32_t current_sna_offset =  0;
 uint32_t current_sna_size = 0;
 
@@ -318,7 +319,7 @@ void nmi_action_list_sna() {
                     nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
 
                     printf("Listing %s\n", info.name);
-                    strcpy(nmi_rom_data + stringoffset, info.name);
+                    strcpy(reinterpret_cast<char*>(nmi_rom_data) + stringoffset, info.name);
                     nmi_rom_data[stringoffset + filenamelen - 5] = '\0';
                     stringoffset += filenamelen + 1;
                 }
@@ -353,7 +354,7 @@ void process_nmi_request() {
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
         printf("Loading %s\n", nmi_rom_data + nameoffset);
-        load_snapshot_file(nmi_rom_data + nameoffset);
+        load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
 
         printf("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
@@ -392,10 +393,7 @@ void process_nmi_request() {
     } else if (action == ACTION_SNA_LIST) {
         nmi_action_list_sna();
     }
-
-    sleep_ms(1);
     nmi_rom_data[0] = 0;
-
 }
 
 void init_file_system() {
@@ -408,7 +406,7 @@ void init_file_system() {
 }
 
 
-#define ENABLE_WIFI
+//#define ENABLE_WIFI
 
 int main() {
 
@@ -440,8 +438,6 @@ int main() {
 
 
     sleep_ms(200);
-    printf("Started %d\n", FGH_ROM_SIZE);
-    printf("Busctrl->priority %X\n", bus_ctrl_hw->priority);
     init_file_system();
 
     #ifdef ENABLE_WIFI
@@ -461,7 +457,7 @@ int main() {
 
     #endif
 
-    printf("Busctrl->priority %X\n", bus_ctrl_hw->priority);
+    printf("\xAB""Busctrl->priority %X\n", bus_ctrl_hw->priority);
 
     uint32_t c = 0;
 
@@ -486,6 +482,7 @@ int main() {
         #endif
         #endif
         sleep_ms(1);
+        pollUsbCommandHandler();
 
         #ifdef ENABLE_WIFI
         bool linkup = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP;

@@ -462,7 +462,7 @@ err_t my_recv_function(void *arg, struct tcp_pcb *tpcb,
     struct pbuf* currBuf = p;
     int parseResult = 0;
     while (parseResult == 0 && currBuf != NULL) {
-        parseResult = parse_recv_buffer(tpcb, currBuf->payload, currBuf->len);
+        parseResult = parse_recv_buffer(tpcb, reinterpret_cast<uint8_t*>(currBuf->payload), currBuf->len);
         currBuf = currBuf->next;
     }
 
