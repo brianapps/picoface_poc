@@ -1,0 +1,25 @@
+
+
+ Pin # | Name     | Pin Type
+-----------------------------
+   1   | X4       | Input
+   2   | X3       | Input
+   3   | X2       | Input
+   4   | X1       | Input
+   5   | X0       | Input
+   6   | Y3       | Input
+   7   | Y2       | Input
+   8   | Y1       | Input
+   9   | Y0       | Input
+  10   | GND      | GND
+  11   | Y4       | Input
+  12   | /CSROM   | Output
+  13   | XE       | Input
+  14   | ROME     | Input
+  15   | O4       | Output
+  16   | O3       | Output
+  17   | O2       | Output
+  18   | O1       | Output
+  19   | O0       | Output
+  20   | VCC      | VCC
+

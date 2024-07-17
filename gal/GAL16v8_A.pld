@@ -1,0 +1,21 @@
+GAL16V8
+ChipA
+
+
+X4  X3      X2  X1    X0  Y3  Y2  Y1  Y0  GND
+Y4  /CSROM  XE  ROME  O4  O3  O2  O1  O0  VCC
+
+
+
+O0 = X0 * XE + Y0 * /XE
+O1 = X1 * XE + Y1 * /XE
+O2 = X2 * XE + Y2 * /XE
+O3 = X3 * XE + Y3 * /XE
+O4 = X4 * XE + Y4 * /XE
+
+/CSROM.T = ROME
+/CSROM.E = ROME
+
+
+DESCRIPTION
+Experiment with implementing chip with 16v8 insteadn of 22v10

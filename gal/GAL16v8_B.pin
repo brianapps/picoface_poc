@@ -1,0 +1,25 @@
+
+
+ Pin # | Name     | Pin Type
+-----------------------------
+   1   | /RD      | Input
+   2   | /WR      | Input
+   3   | /MREQ    | Input
+   4   | /IOREQ   | Input
+   5   | A15      | Input
+   6   | A14      | Input
+   7   | A5       | Input
+   8   | X1       | Input
+   9   | X0       | Input
+  10   | GND      | GND
+  11   | XE       | Input
+  12   | /PICOREQ | Output
+  13   | /JOYE    | Output
+  14   | Y0       | Input
+  15   | Y1       | Input
+  16   | O0       | Output
+  17   | O1       | Output
+  18   | NC       | NC
+  19   | NC       | NC
+  20   | VCC      | VCC
+
