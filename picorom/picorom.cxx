@@ -252,7 +252,8 @@ static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
 #define ACTION_SNA_READ_NEXT 0x02
 #define ACTION_SNA_BEGIN_WRITE 0x03
 #define ACTION_SNA_NEXT_WRITE 0x04
-#define ACTION_SNA_LIST 5
+#define ACTION_SNA_LIST 0x05
+#define ACTION_SNA_SAVE 0x06
 
 
 const char* current_sna_data = NULL;
@@ -360,6 +361,35 @@ void nmi_action_list_sna() {
     pico_dir_close(dir);
 }
 
+void nmi_action_sna_save() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint16_t nameoffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint8_t overwrite = nmi_rom_data[4];
+
+    printf("Saving SNA with name: %s, overwrite=%d\n", nmi_rom_data + nameoffset, overwrite);
+    char filename[128];
+    strcpy(filename, reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
+    strcat(filename, ".sna");
+
+    int file = pico_open(filename, (LFS_O_CREAT | LFS_O_WRONLY | LFS_O_TRUNC) 
+    | (overwrite == 0 ? LFS_O_EXCL : 0));
+
+    if (file == LFS_ERR_EXIST) {
+        printf("File exists\n");
+        nmi_rom_data[0] = 1;
+        return;
+    }
+
+    bool ok = file >= 0;
+
+    if (ok) {
+        ok = pico_write(file, sna_load_buffer, SNA_SIZE) >= 0;
+        pico_close(file);
+    }
+
+    nmi_rom_data[0] = ok ? 0 : 2;        
+}
+
 
 void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
@@ -399,16 +429,12 @@ void process_nmi_request() {
         uint32_t tocopy = MIN(count, SNA_SIZE - current_sna_write_offset);
         printf("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
         memcpy(sna_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
-        current_sna_write_offset += tocopy;
-        printf("Written %d of %d\n", current_sna_write_offset, SNA_SIZE);
-        if (current_sna_write_offset == SNA_SIZE) {
-            printf("Saving the snap now\n");
-            int file = pico_open("/ASnap.sna", LFS_O_CREAT | LFS_O_WRONLY | LFS_O_TRUNC);
-            pico_write(file, sna_load_buffer, SNA_SIZE);
-            pico_close(file);
-        }
+       current_sna_write_offset += tocopy;
     } else if (action == ACTION_SNA_LIST) {
         nmi_action_list_sna();
+    } else if (action == ACTION_SNA_SAVE) {
+        nmi_action_sna_save();
+        return;
     }
     nmi_rom_data[0] = 0;
 }

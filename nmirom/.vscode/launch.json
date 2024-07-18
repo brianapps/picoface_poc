@@ -52,7 +52,7 @@
                 "codeCoverageEnabled": true
             },
         
-            "startAutomatically": false,
+            "startAutomatically": true,
             "commandsAfterLaunch": [
             ],
             "rootFolder": "${workspaceFolder}",

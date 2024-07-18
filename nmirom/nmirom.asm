@@ -6,6 +6,16 @@ SCREEN: equ 0x4000
 SCREEN_ATTRIB: equ 0x5800
 BORDCR: equ  0x5C48
 
+// The communication between the pico and the spectrum nmi rom is via special
+// memory locations.
+
+// Memory location zero is treated as special indicator:
+// - When this value is 255, this lets the pico know there is work to do.
+// - When work is complete, the pico sets to a value other than 255. 0 indicates
+//   success, anything else an error of some sort
+
+
+
 ACTION_BEGIN_SNA_READ: equ 0x01
 // param1 = name pointer
 // param2 = sna header offset
@@ -33,6 +43,12 @@ ACTION_SNA_LIST equ 0x05
 //     BYTE moreAviable  (non-zero if true)
 //     WORD namepointer[countReturned]
 //     String data follows
+
+
+ACTION_SNA_SAVE equ 0x06
+// WORD param1 = pointer to file name to save
+// BYTE param2 = overwrite flag, force overwrite is non-zero
+// status return is 0 for success, 1 for file exists, anything else is an error
 
 
     MACRO MENU_ITEM key, y, x, msg, handler
@@ -76,7 +92,7 @@ TEST_AREA: equ 32768
 PIXEL_SIZE: equ 192 * 32
     
 
-startmenu:
+nmientry:
     org 0x66
     nop
 
@@ -139,26 +155,8 @@ startmenu:
     ld bc, 6912
     ldir
 
-.showtopscreen
-    ld hl, startmenu_def
-    call showmenu
-
-    ld hl, startmenu_def
-    jp menukeyhandler    
-
-.handle_save:
-    call savesnapshot
-    jr .exittopscreen
-
-.handle_exit:
-    jr .exittopscreen   
-
-.handle_load:
-    call loadscreen
-    jr .showtopscreen
-
-.handle_change_rom:
-    jr .showtopscreen
+    call startmenu
+    ;call savesnapshotscreen
 
 .exittopscreen
 
@@ -191,7 +189,35 @@ iff2save:
     .byte 0
 
 
-startmenu_def:
+
+; -------------------------------------------
+; Start up menu
+
+startmenu:
+
+.showtopscreen
+    ld hl, .startmenu_def
+    call showmenu
+    ld hl, .startmenu_def
+    jp menukeyhandler    
+
+.handle_save:
+    call savesnapshotscreen
+    cp 0
+    jr nz, .showtopscreen
+    ret
+
+.handle_exit:
+    ret
+
+.handle_load:
+    call loadscreen
+    jr .showtopscreen
+
+.handle_change_rom:
+    jr .showtopscreen
+
+.startmenu_def:
     MENU_ITEM 0, 1, 1, .hellomsg, 0
     MENU_ITEM 's', 3, 2, .savemsg, startmenu.handle_save
     MENU_ITEM 'l', 4, 2, .loadmsg, startmenu.handle_load
@@ -210,17 +236,6 @@ startmenu_def:
 
 sna_on_entry: BLOCK SNAHEADER
 
-
-// a is key pressed
-// c is key to check
-// de is char to reverse
-checkkey:
-    cp a, c
-    ret nz
-    call reverseattr
-    call waitforkeyrelease    
-    cp a
-    ret
 
 
 
@@ -349,15 +364,8 @@ menukeyhandler:
     pop hl
     jr menukeyhandler
 
-
-
-
-
-
-
-
-
-
+; -------------------------------------------
+; Load snapshot menu
 
 loadscreen:
     ld de, 0
@@ -385,8 +393,6 @@ loadscreen:
 1:  ld a, (ix)
     cp 255
     jr z, 1B
-
-
     ; enable the next action if there is more to fetch
     ld hl, .menunext
     ld a, (spare_space + 1) ; more names available? 1 if so
@@ -398,7 +404,6 @@ loadscreen:
 .enablenext
     res 7, (hl)
 1:
-
     ld a, (spare_space) ; count of entries
     ld b, a
     xor a
@@ -467,8 +472,6 @@ loadscreen:
     ex hl, de
     jp loadsnapshot
 
-
-
 .nextkeyhandler:
     ld hl, (.startpos)
     ld de, 10
@@ -483,25 +486,18 @@ loadscreen:
     ex hl, de
     jp .fetchlist
 
-
-
-
 .exithandler:    
     ret
 
 .startpos WORD 0
-
 .titlemsg DZ "Load snapshot"
 .snap0 BYTE 0
-
 .exit DZ "Exit"
 .next DZ "Next"
 .prev DZ "Previous"
 
 .menu     
-
     MENU_ITEM 0, 1, 1, .titlemsg, 0
-
     MENU_ITEM 'x', 14, 2, .exit, .exithandler
 .menuprev
     MENU_ITEM 'p', 14, 9, .prev, .prevkeyhandler
@@ -522,6 +518,257 @@ loadscreen:
 
 
 
+; -------------------------------------------
+; Save snapshot menu
+
+savesnapshotscreen:
+
+    ld a, (sna_on_entry + SNAHEADER.BORD)
+    ld (.bordercolour), a
+
+    xor a
+    ld (.namelen), a
+
+.redisplay:
+    call clearscreen
+    ld de, 0x0101
+    ld hl, .titlemsg
+    call putstring
+
+    ld de, 0x0301
+    ld hl, .namelabel
+    call putstring
+    ld de, 0x0401
+    ld b, 30
+    ld a, 0b001111
+    call putattributes
+
+    ld de, 0x0601
+    ld hl, .borderlabel
+    call putstring
+
+    ld de, 0x0901
+    ld hl, .help1
+    call putstring
+    ld de, 0x0A01
+    ld hl, .help2
+    call putstring
+
+    ld de, 0x0B01
+    ld hl, .help3
+    call putstring
+
+
+    call .showbordername
+
+    ld a, (.namelen)
+    ld b, a
+    ld de, 0x0401
+    ld hl, .nametext
+    cp 0
+    jr z, 2F
+1:  
+    ld a, (hl)
+    inc hl
+    ld c, a
+    call putchar
+    djnz 1B
+2:
+    ld c, '_'
+    call putchar
+
+
+.waitfornextkey
+    call waitforkeypress
+
+    cp 0x18
+    jr z, .exit
+
+    cp 0x13
+    jr z, .dosave
+
+    cp 0x0A
+    jr z, .backspace
+
+    cp 31
+    jr nc, .handlecharkey
+
+    cp 0x9
+    jr nc, .waitfornextkey
+
+.handleborder
+    and 0b111
+    ld (.bordercolour), a
+    call .showbordername
+    jr .waitforkeyrelease    
+
+
+.handlecharkey
+    ld c, a
+    ld a, (.namelen)
+    cp 20
+    jr nc, .waitforkeyrelease
+
+    ld hl, .nametext
+    ld d, 0
+    ld e, a
+    add hl, de
+    ld (hl), c
+    
+    ld d, 4
+    ld e, a
+    inc e
+    call putchar
+    ld c, '_'
+    call putchar
+
+    inc a
+    ld (.namelen), a
+
+.waitforkeyrelease
+    call waitforkeyrelease
+
+1:   jr .waitfornextkey
+
+
+
+.exit
+    call waitforkeyrelease
+    ld a, 1
+    ret
+
+.backspace
+    ld a, (.namelen)
+    cp 0
+    jr z, .waitforkeyrelease
+    dec a
+    ld (.namelen), a
+    ld d, 4
+    inc a
+    ld e, a
+    ld c, '_'
+    call putchar
+    ld c, ' '
+    call putchar
+    jr .waitforkeyrelease
+
+
+.dosave
+    ld a, (.bordercolour)
+    ld (sna_on_entry + SNAHEADER.BORD), a
+    call sendsnapshottopico
+    xor a ; don't overwrite in first instance
+.saveit
+    push ix
+    ld ix, 0
+    ld (ix + 4), a 
+    ld (ix + 1), ACTION_SNA_SAVE
+    ld a, (.namelen)
+    ld e, a
+    ld d, 0
+    ld hl, .nametext
+    ld (ix + 2), hl
+    add hl, de
+    ld (hl), 0
+    ld (ix), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+    pop ix    
+
+    cp 0
+    ret z ; save was a success
+    cp 1
+    jr z, .prompttooverwrite
+
+    ld a, 1
+    ; some error
+    ret
+
+.prompttooverwrite:
+    call overwritescreen
+    jp nc, .redisplay ; don't overwrite, give the user a chance to change the name
+    ld a, 1          ; otherwise have another go with a forced overwrite
+    jr .saveit    
+
+.showbordername:
+    ld a, (.bordercolour)
+    add a, a
+    add a, a
+    add a, a
+    ld d, 0
+    ld e, a
+    ld hl, .border0
+    add hl, de
+    ld de, 0x0609
+    call putstring
+    ld a, (.bordercolour)
+    rla
+    rla
+    rla
+    and 0b111000
+    cp 0b100000
+    jr nc, .keepinkblack
+    or 0b111
+.keepinkblack
+    ld de, 0x0609
+    ld b, 7
+    call putattributes    
+    ret
+
+
+
+.bordercolour DB 1
+.nametext BLOCK 32
+.namelen DB 1
+
+.titlemsg DZ "Save Snapshot"
+.help1 DZ "ENTER to save, BREAK To exit"
+.help2 DZ "Shift 1-8 to change saved"
+.help3 DZ "border colour"
+.namelabel DZ "Name:"
+.borderlabel DZ "Border: "
+.border0 DZ "Black  "
+.border1 DZ "Blue   "
+.border2 DZ "Red    "
+.border3 DZ "Magenta"
+.border4 DZ "Green  "
+.border5 DZ "Cyan   "
+.border6 DZ "Yellow "
+.border7 DZ "White  "
+
+
+overwritescreen:
+    ld hl, .menu_def
+    call showmenu
+
+    ld hl, .menu_def
+    jp menukeyhandler
+
+.handle_no:
+    scf
+    ccf
+    ret
+
+.handle_yes:
+    scf
+    ret
+
+.menu_def:
+    MENU_ITEM 0, 1, 1, .title1, 0
+    MENU_ITEM 0, 2, 1, .title2, 0
+    MENU_ITEM 'y', 4, 2, .yes, .handle_yes
+    MENU_ITEM 'n', 5, 2, .no, .handle_no
+    MENU_END
+.title1 DZ "A file with this name exists"
+.title2 DZ "Overwrite this file?"
+.yes: DZ "Yes, overwrite this file"
+.no: DZ "No, cancel"
+
+
+
+
+; -------------------------------------------
 
      STRUCT SNAHEADER
 I    BYTE
@@ -542,7 +789,7 @@ IM   BYTE
 BORD BYTE
      ENDS
 
-savesnapshot:
+sendsnapshottopico:
     push ix
     ld ix, 0
     ld hl, sna_on_entry
@@ -622,6 +869,9 @@ loadsnapshot:
     djnz .transfer
     pop ix
 
+    ld a, (sna_header + SNAHEADER.BORD)
+    and 7
+    out (0xfe), a
     ld a, (sna_header + SNAHEADER.I)
     ld i, a
     ld a, (sna_header + SNAHEADER.IM)
@@ -775,10 +1025,12 @@ putchar:
 
 
 // de holds the y, x position to reverse
-reverseattr:
+// b holds the count
+// a the value to set
+
+putattributes:
     ld hl, SCREEN_ATTRIB
     ld l, e
-
     ld e, 0
     srl d
     rr e
@@ -786,7 +1038,25 @@ reverseattr:
     rr e
     srl d
     rr e
+    add hl, de
 
+1:  ld (hl), a
+    inc hl
+    djnz 1B
+    ret    
+
+
+// de holds the y, x position to reverse
+reverseattr:
+    ld hl, SCREEN_ATTRIB
+    ld l, e
+    ld e, 0
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
     add hl, de
 
     ld a, (hl)
@@ -953,16 +1223,18 @@ keytable0:
     defb 'p', 'o', 'i', 'u','y'
     defb 0x13, 'l', 'k', 'j','h'
     defb ' ', 'm', 'n', 'b', '~'
+; shifted keys
 keytable1:
     defb 'Z', 'X', 'C', 'V', '~'
     defb 'A', 'S', 'D', 'F','G'
     defb 'Q', 'W', 'E', 'R','T'
-    defb '1', '2', '3', '4','5'
-    defb '0', '9', '8', '7','6'
+    defb 0x1, 0x2, 0x3, 0x4, 0x5
+    defb 0xA, 0x9, 0x8, 0x7, 0x6
     defb 'P', 'O', 'I', 'U','Y'
     defb 0x13, 'L', 'K', 'J','H'
-    defb 0x10, 'M', 'N', 'B', '~'
+    defb 0x18, 'M', 'N', 'B', '~'
 
+; symshifted keys
 keytable2:
     defb ':', 0x60, '?', '/', '~'
     defb '~', '|', '\', '{','}'
