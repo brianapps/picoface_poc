@@ -239,7 +239,7 @@ void __time_critical_func(do_my_pio)() {
 #define SNA_SIZE 49179
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
 
-static char sna_buffer[49179];
+//static char sna_buffer[49179];
 static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
 
 // extern const uint8_t MANIC_DATA[];
@@ -267,15 +267,23 @@ void load_snapshot_file(const char* fileAndExt) {
     int filePartLen = strlen(fileAndExt);
     memcpy(filename, fileAndExt, filePartLen);
     filename[filePartLen] = '.';
-    strcpy(filename + filePartLen + 1, fileAndExt + filePartLen + 1);
+    const char* ext = fileAndExt + filePartLen + 1;
+    bool isCompressed = strcasecmp(ext, "snaz") == 0;
+    strcpy(filename + filePartLen + 1, ext);
     printf("File name and extension: %s\n", filename);
     int file = pico_open(filename, LFS_O_RDONLY);
     size_t file_size = pico_size(file);
-    pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
-    pico_close(file);
-    int res = LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
-    printf("Decompress result: %d, original size: %d\n", res, file_size);
 
+    if (isCompressed) {
+        pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
+        int res = LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
+        printf("Decompress result: %d, original size: %d\n", res, file_size);
+    }
+    else {
+        pico_read(file, sna_load_buffer, SNA_SIZE);
+    }
+
+    pico_close(file);
     current_sna_data = sna_load_buffer;
     current_sna_size = SNA_SIZE;            
 }
@@ -288,6 +296,26 @@ bool stringendswith(const char* str, const char* suffix) {
     }
     return strcasecmp(str + len - suffixlen, suffix) == 0;
 }
+
+inline bool is_snapshot_file(const char* filename, size_t filename_len) {
+    return (filename_len > 5 && strcasecmp(filename + filename_len - 5, ".snaz") == 0) ||
+        (filename_len > 4 && strcasecmp(filename + filename_len - 4, ".sna") == 0);
+}
+
+const char* split_filename_and_get_ext(char* name) {
+    char* ext = nullptr;
+    char* pch = name;
+    while (*pch != '\0') {
+        if (*pch == '.')
+            ext = pch;
+        pch++;
+    }
+    if (ext == nullptr)
+        return pch;
+    *ext = '\0';
+    return ext + 1;
+}
+
 
 void nmi_action_list_sna() {
     uint8_t* nmi_rom_data = rom_data + 16384;
@@ -307,7 +335,9 @@ void nmi_action_list_sna() {
     while (pico_dir_read(dir, &info) > 0) {
         if (info.type == LFS_TYPE_REG) {
             int filenamelen = strlen(info.name);
-            if (filenamelen > 5 && strcasecmp(info.name + filenamelen - 5, ".snaz") == 0) {
+            const char* ext = split_filename_and_get_ext(info.name);
+
+            if (strcasecmp(ext, "snaz") == 0 || strcasecmp(ext, "sna") == 0) {
                 if (foundsofar >= start) {
                     int index = foundsofar - start;
                     if (index >= 10) {
@@ -319,8 +349,7 @@ void nmi_action_list_sna() {
                     nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
 
                     printf("Listing %s\n", info.name);
-                    strcpy(reinterpret_cast<char*>(nmi_rom_data) + stringoffset, info.name);
-                    nmi_rom_data[stringoffset + filenamelen - 5] = '\0';
+                    memcpy(nmi_rom_data + stringoffset, info.name, filenamelen + 1);
                     stringoffset += filenamelen + 1;
                 }
 
@@ -328,14 +357,7 @@ void nmi_action_list_sna() {
             }
         }
     }
-
-    
-
-
-
     pico_dir_close(dir);
-
-
 }
 
 
@@ -343,12 +365,6 @@ void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint8_t action = nmi_rom_data[1];
     printf("Action to process: %d\n", action);
-
-    for (int i = 0; i < 16; ++i) {
-        printf("%02X ", nmi_rom_data[i]);
-    }
-    printf("\n");
-
     if (action == ACTION_BEGIN_SNA_READ) {
         uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
@@ -366,30 +382,31 @@ void process_nmi_request() {
     else if (action == ACTION_SNA_READ_NEXT) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
-
         uint32_t tocopy = MIN(count, current_sna_size - current_sna_offset);
-
         printf("Continue SNA, destination: %X, count: %X\n", offset, tocopy);
-
         memcpy(nmi_rom_data + offset, current_sna_data + current_sna_offset, tocopy);
-
         current_sna_offset += tocopy;
-
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
-
     }  else if (action == ACTION_SNA_BEGIN_WRITE) {
         uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         printf("Start SNA save, head destination: %X\n", headeroffset);
-        memcpy(sna_buffer, nmi_rom_data + headeroffset, 27);
+        memcpy(sna_load_buffer, nmi_rom_data + headeroffset, 27);
         current_sna_write_offset = 27;
     }  else if (action == ACTION_SNA_NEXT_WRITE) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
-        uint32_t tocopy = MIN(count, sizeof(sna_buffer) - current_sna_write_offset);
+        uint32_t tocopy = MIN(count, SNA_SIZE - current_sna_write_offset);
         printf("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
-        memcpy(sna_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
+        memcpy(sna_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
         current_sna_write_offset += tocopy;
+        printf("Written %d of %d\n", current_sna_write_offset, SNA_SIZE);
+        if (current_sna_write_offset == SNA_SIZE) {
+            printf("Saving the snap now\n");
+            int file = pico_open("/ASnap.sna", LFS_O_CREAT | LFS_O_WRONLY | LFS_O_TRUNC);
+            pico_write(file, sna_load_buffer, SNA_SIZE);
+            pico_close(file);
+        }
     } else if (action == ACTION_SNA_LIST) {
         nmi_action_list_sna();
     }

@@ -193,7 +193,7 @@ iff2save:
 
 startmenu_def:
     MENU_ITEM 0, 1, 1, .hellomsg, 0
-    MENU_ITEM 's' | 0x80, 3, 2, .savemsg, startmenu.handle_save
+    MENU_ITEM 's', 3, 2, .savemsg, startmenu.handle_save
     MENU_ITEM 'l', 4, 2, .loadmsg, startmenu.handle_load
     MENU_ITEM 'r', 5, 2, .chamgemsg, startmenu.handle_change_rom
     MENU_ITEM 'p', 6, 2, .pokemsg, 0

@@ -19,8 +19,6 @@ PACKET_SIZE = 8192 * 3
 
 def sendData(port, cmd, bytesToSend):
     with serial.Serial(port, timeout=5) as ser:
-
-
         ser.write("\r\r".encode())
         ser.read_all()
         
@@ -137,6 +135,9 @@ if args.input is None:
     data = receiveData(args.port, join_params(args.cmdparams))
     if args.output is None:
         print(data.decode())
+    else:
+        with open(args.output, "wb") as fp:
+            fp.write(data)
 else:
     with open(args.input, 'rb') as fp:
         data = fp.read()
