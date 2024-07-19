@@ -51,6 +51,25 @@ ACTION_SNA_SAVE equ 0x06
 // status return is 0 for success, 1 for file exists, anything else is an error
 
 
+ACTION_ROM_LIST equ 0x07
+// as ACTION_SNA_LIST
+// WORD param1  = start number
+// WORD param2 = destination to write results
+//  
+// RESULTS are
+//     BYTE countReturned  (will be no more than 10)
+//     BYTE moreAviable  (non-zero if true)
+//     WORD namepointer[countReturned]
+//     String data follows
+
+
+ACTION_ROM_CHANGE equ 0x08
+// WORD param1 = pointer to file name to load
+// status return is 0 for success, 1 for file exists, anything else is an error
+
+
+
+
     MACRO MENU_ITEM key, y, x, msg, handler
         BYTE key
         BYTE y
@@ -156,7 +175,7 @@ nmientry:
     ldir
 
     call startmenu
-    ;call savesnapshotscreen
+    ;call changeromscreen
 
 .exittopscreen
 
@@ -215,6 +234,7 @@ startmenu:
     jr .showtopscreen
 
 .handle_change_rom:
+    call changeromscreen
     jr .showtopscreen
 
 .startmenu_def:
@@ -363,6 +383,227 @@ menukeyhandler:
 .nohandler
     pop hl
     jr menukeyhandler
+
+; ---------------------------------------------
+;
+
+testromdata:
+    byte 10  ; number of items
+    byte 1  ; are there more
+    word .rom1, .rom2, .rom3, .rom4, .rom5, .rom6, .rom7, .rom8, .rom9, .rom10
+.rom1 DZ "The first rom"
+.rom2 DZ "The second"
+.rom3 DZ "Third"
+.rom4 DZ "AAD"
+.rom5 DZ "EADSE"
+.rom6 DZ "4th"
+.rom7 DZ "4th"
+.rom8 DZ "4th"
+.rom9 DZ "4th"
+.rom10 DZ "The stuff"
+
+
+testromdata1:
+    byte 3  ; number of items
+    byte 0  ; are there more
+    word .rom1, .rom2, .rom3, 0, 0, 0, 0, 0, 0, 0
+.rom1 DZ "Page Two"
+.rom2 DZ "Another one"
+.rom3 DZ "And the final"
+
+
+
+; hl points to list data
+; de points to first menu item to update
+updatemenulist:
+    ld bc, 7
+    ex hl, de
+    ; check for previous 
+    ld a, (ix + 2)
+    or (ix + 3)
+    jr z, .noprev
+    res 7, (hl)
+    jr 1F
+.noprev
+    set 7, (hl)
+1:
+    add hl, bc
+    inc de
+    ld a, (de)
+    cp 0
+    jr z, .nomore
+    res 7, (hl)
+    jr 1F
+.nomore:
+    set 7, (hl)
+1:
+    add hl, bc
+    ex hl, de
+    dec hl
+
+    ld c, 255
+    ld a, 10
+    sub (hl)
+    inc hl
+    inc hl
+
+    ld b, 10
+1:
+    cp b
+    ex de, hl
+    jr nc, .hideitem
+    res 7, (hl)
+    ex de, hl
+    inc de
+    inc de
+    inc de
+    ldi   
+    ldi  ; ignore the decrement of bc because c is large enought that it doesn't affect b
+    jr 2F
+.hideitem
+    set 7, (hl)
+    ex de, hl
+.advancetonext
+    inc hl
+    inc hl
+    .5 inc de
+2:
+    inc de
+    inc de
+    djnz 1B
+
+    ret
+
+
+
+
+
+changeromscreen:
+    ld ix, 0
+    ld de, 0
+
+.fetchlist
+    ld (ix + 1), ACTION_ROM_LIST
+    ld (ix + 2), de
+    ld (.startpos), de
+    ld hl, spare_space
+    ld (ix + 4), hl
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B    
+
+
+.updatefromdata
+    ld de, .menuprev
+    call updatemenulist
+
+    ld hl, .menu
+    call showmenu
+.redisplay
+    ld a, (.writable)
+    cp 0
+    jr z, 1F
+    ld a, 'x'-' '
+1:  add ' '
+    ld c, a
+2:  ld de, 0x0F0E
+    call putchar
+
+
+    ld hl, .menu
+    jp menukeyhandler
+
+.exithandler:
+    ret
+
+.nextkeyhandler:
+    ld hl, (.startpos)
+    ld de, 10
+    add hl, de
+    ex hl, de
+    jp .fetchlist
+
+.prevkeyhandler:
+    ld hl, (.startpos)
+    ld de, 10
+    sub hl, de
+    ex hl, de
+    jp .fetchlist
+
+
+.romhandlerzero
+    ld a, 9
+    jr 1F
+
+.romhandler:
+    sub '1'
+1:
+    ld b, 0
+    ld c, a
+    ld hl, spare_space + 2
+    add hl, bc
+    add hl, bc
+    ld e, (hl)
+    inc hl
+    ld d, (hl)
+    ex hl, de
+    call changerom
+    jr .redisplay
+
+.writehandler:
+    ld a, (.writable)
+    xor 1
+    ld (.writable), a
+    jr .redisplay
+
+.writable BYTE 0
+.startpos WORD 0
+.titlemsg DZ "Change Rom"
+.snap0 BYTE 0
+.exit DZ "Exit"
+.next DZ "Next"
+.prev DZ "Previous"
+.writablemsg DZ "Writable [ ]"
+
+.menu     
+    MENU_ITEM 0, 1, 1, .titlemsg, 0
+    MENU_ITEM 'w', 15, 2, .writablemsg, .writehandler
+    MENU_ITEM 'x', 14, 2, .exit, .exithandler
+.menuprev
+    MENU_ITEM 'p', 14, 9, .prev, .prevkeyhandler
+    MENU_ITEM 'n', 14, 20, .next, .nextkeyhandler
+    MENU_ITEM '1', 3, 2, .snap0, .romhandler
+    MENU_ITEM '2', 4, 2, .snap0, .romhandler
+    MENU_ITEM '3', 5, 2, .snap0, .romhandler
+    MENU_ITEM '4', 6, 2, .snap0, .romhandler
+    MENU_ITEM '5', 7, 2, .snap0, .romhandler
+    MENU_ITEM '6', 8, 2, .snap0, .romhandler
+    MENU_ITEM '7', 9, 2, .snap0, .romhandler
+    MENU_ITEM '8', 10, 2, .snap0, .romhandler
+    MENU_ITEM '9', 11, 2, .snap0, .romhandler
+    MENU_ITEM '0', 12, 2, .snap0, .romhandlerzero
+    MENU_END
+
+
+changerom:
+    ld (ix + 2), hl
+    ld (ix + 1), ACTION_ROM_CHANGE
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+
+    cp 0
+    ret nz
+
+    // cause the return to jump to 0 and hence cause a reset
+    ld hl, 0
+    ld sp, 30000
+    push hl
+    jp exitnmi
+
+
 
 ; -------------------------------------------
 ; Load snapshot menu

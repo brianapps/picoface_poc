@@ -61,6 +61,7 @@ struct MYSTATE {
     uint32_t flags;
     uint32_t nmi_active;
     uint32_t writable;
+    uint32_t flags_on_nmi_exit;
 };
 
 volatile struct MYSTATE rom_state = {0};
@@ -75,7 +76,6 @@ extern const uint32_t NMI_ROM_SIZE;
 void __time_critical_func(serverom)() {
     //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
     //register unsigned nmi_entry __asm("r11") = (1 << 14 | 0x66) << 17;
-    // r9 holds previous romstate
     // r8 holds nmiexit address shifted, or 1 if disabled
     asm(
     "   mov r0, #1\n"
@@ -106,8 +106,8 @@ void __time_critical_func(serverom)() {
     "   bne main_loop\n"
 
     // leaving nmi rom now
-    "   mov r0, r9\n"
-    "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what is was prior to entering the nmi routine
+    "   ldr r0, [%[rom_state], #12]\n"
+    "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what it was prior to entering the nmi routine
     "   mov r0, #1\n"                      // r8 is set to an invalid shifted address so we have effectively disabled
     "   mov r8, r1\n"                      // the nmi exit check from now on
     "   mov r4, %[rom_data]\n"             // Restore the rom address to the normal rom, regardless of whether the rom is enabled or not
@@ -122,7 +122,6 @@ void __time_critical_func(serverom)() {
     "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
     "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
     "   mov r0, #1\n"
-    "   mov r9, r0\n"                            // previous romstate was enabled
     "   str r0, [%[rom_state], #4]\n"            // nmi routine is now active
     "   str r0, [%[rom_state], #0]\n"            // rom is enabled, because it is the nmi rom
     "   mov r8, %[nmiexit]\n"                    // and set r8 to nmi exit address
@@ -135,7 +134,6 @@ void __time_critical_func(serverom)() {
     "   bne main_loop\n"
     "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
     "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
-    "   mov r9, r0\n"                            // previous romstate was disabled
     "   mov r1, #1\n"
     "   str r1, [%[rom_state], #4]\n"            // we are now in nmi routine
     "   str r1, [%[rom_state], #0]\n"            // and the rom is enabled
@@ -176,7 +174,7 @@ void __time_critical_func(serverom)() {
       [rom_data]  "h" (rom_data),
       [rom_data_nmi]  "i" (rom_data + 16384)
       
-    : "r0", "r2", "r1", "r3", "r4", "r8", "r9"
+    : "r0", "r2", "r1", "r3", "r4", "r8"
     );
 
     return;
@@ -254,6 +252,9 @@ static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
 #define ACTION_SNA_NEXT_WRITE 0x04
 #define ACTION_SNA_LIST 0x05
 #define ACTION_SNA_SAVE 0x06
+#define ACTION_ROM_LIST 0x07
+#define ACTION_ROM_CHANGE 0x08
+
 
 
 const char* current_sna_data = NULL;
@@ -390,6 +391,103 @@ void nmi_action_sna_save() {
     nmi_rom_data[0] = ok ? 0 : 2;        
 }
 
+bool add_file_to_list(const char* name, const uint16_t destoffset, uint16_t& stringoffset) {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    int index = nmi_rom_data[destoffset];
+    if (index >= 10) {
+        nmi_rom_data[destoffset + 1] = 1;
+        return false;
+    }
+    nmi_rom_data[destoffset] = index + 1;
+    nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
+    nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
+    int filenamelen = strlen(name) + 1;
+    filenamelen += strlen(name + filenamelen) + 1;
+    memcpy(nmi_rom_data + stringoffset, name, filenamelen);
+    stringoffset += filenamelen;
+    return true;
+}
+
+
+
+void nmi_action_list_rom() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint16_t stringoffset = destoffset + 22;
+
+    printf("List roms starting at %d and storing at %X\n", start, destoffset);
+
+    int dir = pico_dir_open("/");
+    struct lfs_info info;
+
+    nmi_rom_data[destoffset] = 0;
+    nmi_rom_data[destoffset + 1] = 0;
+    int16_t foundsofar = 1;
+
+    if (start == 0) {
+        add_file_to_list("Internal Rom\0int", destoffset, stringoffset);
+    }
+
+    while (pico_dir_read(dir, &info) > 0) {
+        if (info.type == LFS_TYPE_REG) {
+            const char* ext = split_filename_and_get_ext(info.name);
+            if (strcasecmp(ext, "romz") == 0 || strcasecmp(ext, "rom") == 0) {
+                if (foundsofar >= start) {
+                    if (!add_file_to_list(info.name, destoffset, stringoffset))
+                        break;
+                }
+                foundsofar++;
+            }
+        }
+    }
+    pico_dir_close(dir);
+}
+
+void nmi_action_change_rom() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    const char* fileAndExt = reinterpret_cast<const char*>(nmi_rom_data + nameoffset);
+    char filename[128];
+    int filePartLen = strlen(fileAndExt);
+    memcpy(filename, fileAndExt, filePartLen);
+    filename[filePartLen] = '.';
+    const char* ext = fileAndExt + filePartLen + 1;
+    bool isCompressed = strcasecmp(ext, "romz") == 0;
+    strcpy(filename + filePartLen + 1, ext);
+    printf("Rom File name and extension: %s, is compressed = %d\n", filename, isCompressed);
+
+    if (strcmp(filename, "Internal Rom.int") == 0) {
+         // disable PICO from supplying its own rom when the nmi routine exits
+         // and thereby return to the Spectrum internal ROM
+        rom_state.flags_on_nmi_exit = 0;
+        nmi_rom_data[0] = 0;
+    }
+    else {
+        int file = pico_open(filename, LFS_O_RDONLY);
+        if (file < 0) {
+            nmi_rom_data[0] = 1;
+            return;
+        }
+
+        size_t file_size = pico_size(file);
+
+        if (isCompressed) {
+            pico_read(file, sna_load_buffer, file_size);
+            int res = LZ4_decompress_safe_partial(sna_load_buffer, 
+                reinterpret_cast<char*>(rom_data), file_size, 16384, 16384);
+            printf("Decompress result: %d, original size: %d\n", res, file_size);
+        }
+        else {
+            pico_read(file, sna_load_buffer, SNA_SIZE);
+        }
+
+        pico_close(file);
+        rom_state.flags_on_nmi_exit = 1;
+        nmi_rom_data[0] = 0;
+    }
+}
+
 
 void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
@@ -435,7 +533,13 @@ void process_nmi_request() {
     } else if (action == ACTION_SNA_SAVE) {
         nmi_action_sna_save();
         return;
+    } else if (action == ACTION_ROM_LIST) {
+        nmi_action_list_rom();
+    } else if (action == ACTION_ROM_CHANGE) {
+        nmi_action_change_rom();
+        return;
     }
+
     nmi_rom_data[0] = 0;
 }
 
@@ -567,19 +671,19 @@ int main() {
                 }
             }
             else {
-                printf("Switching ROM now..\n");
-                memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
-                c++;
-                rom_state.flags = (rom_state.flags & 1) ? 0 : 1;
-                rom_state.writable = 0;
-                printf("Resetting %d\n", rom_state.flags);
+            //     printf("Switching ROM now..\n");
+            //     memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
+            //     c++;
+            //     rom_state.flags = (rom_state.flags & 1) ? 0 : 1;
+            //     rom_state.writable = 0;
+            //     printf("Resetting %d\n", rom_state.flags);
 
-                gpio_put(PIN_RESET, true);
-                sleep_ms(3);
-                gpio_put(PIN_RESET, false);    
+            //     gpio_put(PIN_RESET, true);
+            //     sleep_ms(3);
+            //     gpio_put(PIN_RESET, false);    
 
-               while (!gpio_get(PIN_USER_SWITCH))
-                    sleep_ms(1);
+            //    while (!gpio_get(PIN_USER_SWITCH))
+            //         sleep_ms(1);
             }
         }
     }
