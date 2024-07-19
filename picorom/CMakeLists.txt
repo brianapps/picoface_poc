@@ -42,7 +42,7 @@ add_subdirectory(littlefs-lib)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom picorom.cxx rom.c nmi.c lz4.c http_server.cxx usb_command_handler.cxx)
+add_executable(picorom picorom.cxx nmi.c lz4.c http_server.cxx usb_command_handler.cxx)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")

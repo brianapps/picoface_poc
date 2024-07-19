@@ -183,11 +183,7 @@ void __time_critical_func(serverom)() {
 
 
 void __time_critical_func(do_my_pio)() {
-    // gpio_init(PIN_RESET);
-    // gpio_put(PIN_RESET, false);
-    // gpio_set_dir(PIN_RESET, true);
 
-    
     PIO pio = pio0;
     pio_sm_claim(pio, MY_SM);
     pio_sm_claim(pio, SM_OUTDATA);
@@ -213,23 +209,12 @@ void __time_critical_func(do_my_pio)() {
     pio_sm_init(pio, MY_SM, offset, &sm_config);
     pio_sm_set_enabled(pio, MY_SM, true);
 
-    #if 0
-    offset = pio_add_program(pio, &putdata_auto_program);
-    sm_config = putdata_auto_program_get_default_config(offset);
-    sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
-    sm_config_set_out_pins(&sm_config, PIN_D0, 8);
-    //sm_config_set_out_shift(&sm_config, true, true, 8);
-    pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
-    pio_sm_set_enabled(pio, SM_OUTDATA, true);
-
-    #else
     offset = pio_add_program(pio, &putdata_program);
     sm_config = putdata_program_get_default_config(offset);
     sm_config_set_sideset_pins(&sm_config, PIN_CSROM);
     sm_config_set_out_pins(&sm_config, PIN_D0, 8);
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
-    #endif
 
     serverom();
 }
@@ -237,14 +222,7 @@ void __time_critical_func(do_my_pio)() {
 #define SNA_SIZE 49179
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
 
-//static char sna_buffer[49179];
 static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
-
-// extern const uint8_t MANIC_DATA[];
-// extern const uint32_t MANIC_SIZE;
-
-// extern const uint8_t KNIGHT_DATA[];
-// extern const uint32_t KNIGHT_SIZE;
 
 #define ACTION_BEGIN_SNA_READ 0x01
 #define ACTION_SNA_READ_NEXT 0x02
@@ -408,8 +386,6 @@ bool add_file_to_list(const char* name, const uint16_t destoffset, uint16_t& str
     return true;
 }
 
-
-
 void nmi_action_list_rom() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
@@ -556,16 +532,11 @@ void init_file_system() {
 //#define ENABLE_WIFI
 
 int main() {
-
-
-
     stdio_init_all();
 
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_PROC1_BITS;
 
-
     memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
-
     rom_state.flags = 0;
 
     multicore_launch_core1(do_my_pio);
@@ -573,7 +544,6 @@ int main() {
     gpio_init(PIN_USER_SWITCH);
     gpio_set_dir(PIN_USER_SWITCH, false);
     gpio_pull_up(PIN_USER_SWITCH);
-    //gpio_set_irq_enabled_with_callback(PIN_USER_SWITCH, GPIO_IRQ_EDGE_FALL, true, user_switch_interrupt);
 
     gpio_init(PIN_RESET);
     gpio_put(PIN_RESET, false);
@@ -669,21 +639,6 @@ int main() {
                     sleep_ms(3);
                     gpio_put(PIN_NMI, true);
                 }
-            }
-            else {
-            //     printf("Switching ROM now..\n");
-            //     memcpy(rom_data, FGH_ROM, FGH_ROM_SIZE);
-            //     c++;
-            //     rom_state.flags = (rom_state.flags & 1) ? 0 : 1;
-            //     rom_state.writable = 0;
-            //     printf("Resetting %d\n", rom_state.flags);
-
-            //     gpio_put(PIN_RESET, true);
-            //     sleep_ms(3);
-            //     gpio_put(PIN_RESET, false);    
-
-            //    while (!gpio_get(PIN_USER_SWITCH))
-            //         sleep_ms(1);
             }
         }
     }
