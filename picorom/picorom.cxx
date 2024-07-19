@@ -89,7 +89,7 @@ void __time_critical_func(serverom)() {
     "   bcs check_fifo_empty\n"
     "   ldr r0, [ %[base], %[sm0_rx_offset]]\n"   // r0 now holds data and address
     "   and r1, r0, r1\n"               // r1 now holds just address
-    "   lsl r2, r0, #17\n"                        // carry flag is set for a read, anc clear for a write
+    "   lsl r2, r0, #17\n"                        // carry flag is set for a read, and clear for a write
     "   bcc write_op\n"
     "   ldr r3, [ %[rom_state], #0]\n"            // r3 holds rom_sate
     "   lsr r3, r3, #1\n"                         // CC is set if rom enable, zero flag is NMI check is enabled
@@ -102,7 +102,9 @@ void __time_critical_func(serverom)() {
     "   ldrb r0, [r4, r1]\n"
     "   str r0, [ %[base], %[sm1_tx_offset] ]\n"
     // Check if have reached the exit point of the nmi routine
-    "   cmp r2, r8\n"
+    //"   bics r2, r2, #31\n" // allow nmi to exit with either a M1 read or normal read of the exit address
+    "   lsl r2, r2, #1\n"
+    "   cmp r2, r8\n" // allow nmi to exit with either a M1 read or normal read of the exit address
     "   bne main_loop\n"
 
     // leaving nmi rom now
@@ -163,7 +165,7 @@ void __time_critical_func(serverom)() {
     :
     : [base] "r" (PIO0_BASE), 
       [nmiaddr] "h" ((0 << 14 | 0x66) << 17),
-      [nmiexit] "h" ((0 << 14 | EXITNMI) << 17),
+      [nmiexit] "h" ((0 << 14 | EXITNMI) << 18),
       [fstat_offset] "I" (PIO_FSTAT_OFFSET),
       [sm0_rx_offset] "I" (PIO_RXF0_OFFSET),
       [sm0_tx_offset] "I" (PIO_TXF0_OFFSET),

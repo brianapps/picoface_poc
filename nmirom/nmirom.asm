@@ -175,7 +175,6 @@ nmientry:
     ldir
 
     call startmenu
-    ;call changeromscreen
 
 .exittopscreen
 
@@ -197,6 +196,9 @@ nmientry:
     ld sp, (sna_on_entry + SNAHEADER.SP)
 ei_exitnmi:
     ei
+self_modify_exit:
+    nop
+    nop
 exitnmi:
     ret
 
@@ -597,11 +599,16 @@ changerom:
     cp 0
     ret nz
 
-    // cause the return to jump to 0 and hence cause a reset
-    ld hl, 0
-    ld sp, 30000
-    push hl
-    jp exitnmi
+    // Use some self modifying code to jump to address zero
+    // When the instruction has been fully read the pico knows
+    // so disable the nmi rom and enter the new rom (or the internal one)
+    // as address 0
+    ld a, 0xC3 // JMP instruction
+    ld (exitnmi - 2), a
+    xor a
+    ld (exitnmi - 1), a
+    ld (exitnmi - 0), a
+    jp exitnmi - 2
 
 
 
@@ -1087,9 +1094,11 @@ loadsnapshot:
     cp 255
     jr z, 1B
 
-    ld b, 8
-    
+    ld a, (sna_header + SNAHEADER.BORD)
+    and 7
+    out (0xfe), a    
 
+    ld b, 8
     ld de, 16384
 
 .transfer
@@ -1110,9 +1119,7 @@ loadsnapshot:
     djnz .transfer
     pop ix
 
-    ld a, (sna_header + SNAHEADER.BORD)
-    and 7
-    out (0xfe), a
+
     ld a, (sna_header + SNAHEADER.I)
     ld i, a
     ld a, (sna_header + SNAHEADER.IM)
@@ -1318,8 +1325,6 @@ reverseattr:
     or e
 
     ld (hl), a
-
-
     ret
 
 
@@ -1330,7 +1335,7 @@ clearscreen:
     ld a, 0b000111  // black paper, white ink
     ld (hl), a
     ld de, SCREEN_ATTRIB + 1
-    ld bc, 32 * 16 - 1
+    ld bc, 32 * 17 - 1
     ldir
 
     xor a
