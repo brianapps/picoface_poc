@@ -84,7 +84,7 @@ uint8_t rom_data[32768];
 bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2);
 
 
-static bool enable_logging = false;
+static bool enable_logging = true;
 
 void LOG(const char* format, ...) {
     if (enable_logging) {
@@ -534,7 +534,10 @@ void process_nmi_request() {
 
 // Attempt to obtain snapshot from the running spectrum
 const uint8_t* getSnapshotData(size_t& snapshotLength) {
-    uint8_t* nmi_rom_data = rom_data + 16384;
+    // Without the volatile then the nmi_rom_data[0] is only
+    // accessed once and we fail to process requests from the nmi
+    // rom and the spectrum hangs.
+    volatile uint8_t* nmi_rom_data = rom_data + 16384;
 
     bool loggingWasEnabled = enable_logging;
     enable_logging = false;
@@ -545,7 +548,6 @@ const uint8_t* getSnapshotData(size_t& snapshotLength) {
             if (nmi_rom_data[0] == 255) {
                 process_nmi_request();
             }            
-            //sleep_ms(1);
         }
         snapshotLength = SNA_SIZE;
         data = reinterpret_cast<const uint8_t*>(sna_load_buffer);
