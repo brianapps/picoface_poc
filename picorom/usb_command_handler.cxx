@@ -4,6 +4,7 @@
 #include "pico_hal.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdio/driver.h"
+#include "picorom.h"
 
 /*
 Supported commands
@@ -110,7 +111,7 @@ private:
 public:
 
     bool begin(uint32_t totalSize = 0xFFFFFFFF);
-    bool write(char* buffer, int len, absolute_time_t expiry);
+    bool write(const char* buffer, int len, absolute_time_t expiry);
     bool end();
 };
 
@@ -215,7 +216,7 @@ bool CommStreamWriter::begin(uint32_t totalSize) {
     return isOK;
 }
 
-bool CommStreamWriter::write(char* buffer, int len, absolute_time_t expiry) {
+bool CommStreamWriter::write(const char* buffer, int len, absolute_time_t expiry) {
     int sentSoFar = 0;
     while (isOK && sentSoFar < len) {
         int lenToSend = MIN(65355, len - sentSoFar);
@@ -474,6 +475,27 @@ void handleMkDir(const char* filename) {
 }
 
 
+void handleSnapDownload() {
+
+    size_t snapShotlength;
+
+    const uint8_t* data = getSnapshotData(snapShotlength);
+
+    if (data == nullptr) {
+        printf("XFailed to get snapshot data");
+    }
+    else {
+        CommStreamWriter writer;
+        writer.begin(snapShotlength);
+        writer.write(reinterpret_cast<const char*>(data), snapShotlength, make_timeout_time_ms(8000));
+        writer.end();
+    }
+
+
+
+}
+
+
 
 static char commandBuffer[512];
 static size_t commandLength = 0;
@@ -518,6 +540,9 @@ void pollUsbCommandHandler() {
                     const char* n2 = n1 + strlen(n1) + 1;
                     handleRename(n1, n2);
                 }
+            }
+            else if (strcmp(commandBuffer, "snapdownload") == 0) {
+                handleSnapDownload();
             }
             else if (commandBuffer[0] != '\0') {
                 printf("XUnknown command: %s\n", commandBuffer);

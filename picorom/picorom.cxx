@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "hardware/pio.h"
@@ -16,6 +17,8 @@
 
 #define LZ4_STATIC_LINKING_ONLY
 #include "lz4.h"
+
+#include "nmi.h"
 
 extern const uint8_t FGH_ROM[];
 extern const uint32_t FGH_ROM_SIZE;
@@ -67,11 +70,25 @@ struct MYSTATE {
 volatile struct MYSTATE rom_state = {0};
 uint8_t rom_data[32768];
 
-// The RETN instruction is two bytes (ED 45) so the exit address is the 
-// for the second byte of the instruction.
-extern const uint32_t EXITNMI;
-extern const uint8_t NMI_ROM[];
-extern const uint32_t NMI_ROM_SIZE;
+bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2);
+
+
+static bool enable_logging = false;
+
+void LOG(const char* format, ...) {
+    if (enable_logging) {
+        va_list args;
+        va_start(args, format);
+        vprintf(format, args);
+    }
+}
+
+
+// // The RETN instruction is two bytes (ED 45) so the exit address is the 
+// // for the second byte of the instruction.
+// extern const uint32_t EXITNMI;
+// extern const uint8_t NMI_ROM[];
+// extern const uint32_t NMI_ROM_SIZE;
 
 void __time_critical_func(serverom)() {
     //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
@@ -252,14 +269,14 @@ void load_snapshot_file(const char* fileAndExt) {
     const char* ext = fileAndExt + filePartLen + 1;
     bool isCompressed = strcasecmp(ext, "snaz") == 0;
     strcpy(filename + filePartLen + 1, ext);
-    printf("File name and extension: %s\n", filename);
+    LOG("File name and extension: %s\n", filename);
     int file = pico_open(filename, LFS_O_RDONLY);
     size_t file_size = pico_size(file);
 
     if (isCompressed) {
         pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
         int res = LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, SNA_SIZE, SNA_SIZE);
-        printf("Decompress result: %d, original size: %d\n", res, file_size);
+        LOG("Decompress result: %d, original size: %d\n", res, file_size);
     }
     else {
         pico_read(file, sna_load_buffer, SNA_SIZE);
@@ -305,7 +322,7 @@ void nmi_action_list_sna() {
     uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
     uint16_t stringoffset = destoffset + 22;
 
-    printf("List snaps starting at %d and storing at %X\n", start, destoffset);
+    LOG("List snaps starting at %d and storing at %X\n", start, destoffset);
 
     int dir = pico_dir_open("/");
     int16_t foundsofar = 0;
@@ -330,7 +347,7 @@ void nmi_action_list_sna() {
                     nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
                     nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
 
-                    printf("Listing %s\n", info.name);
+                    LOG("Listing %s\n", info.name);
                     memcpy(nmi_rom_data + stringoffset, info.name, filenamelen + 1);
                     stringoffset += filenamelen + 1;
                 }
@@ -347,7 +364,7 @@ void nmi_action_sna_save() {
     uint16_t nameoffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
     uint8_t overwrite = nmi_rom_data[4];
 
-    printf("Saving SNA with name: %s, overwrite=%d\n", nmi_rom_data + nameoffset, overwrite);
+    LOG("Saving SNA with name: %s, overwrite=%d\n", nmi_rom_data + nameoffset, overwrite);
     char filename[128];
     strcpy(filename, reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
     strcat(filename, ".sna");
@@ -356,7 +373,7 @@ void nmi_action_sna_save() {
     | (overwrite == 0 ? LFS_O_EXCL : 0));
 
     if (file == LFS_ERR_EXIST) {
-        printf("File exists\n");
+        LOG("File exists\n");
         nmi_rom_data[0] = 1;
         return;
     }
@@ -394,7 +411,7 @@ void nmi_action_list_rom() {
     uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
     uint16_t stringoffset = destoffset + 22;
 
-    printf("List roms starting at %d and storing at %X\n", start, destoffset);
+    LOG("List roms starting at %d and storing at %X\n", start, destoffset);
 
     int dir = pico_dir_open("/");
     struct lfs_info info;
@@ -433,7 +450,7 @@ void nmi_action_change_rom() {
     const char* ext = fileAndExt + filePartLen + 1;
     bool isCompressed = strcasecmp(ext, "romz") == 0;
     strcpy(filename + filePartLen + 1, ext);
-    printf("Rom File name and extension: %s, is compressed = %d\n", filename, isCompressed);
+    LOG("Rom File name and extension: %s, is compressed = %d\n", filename, isCompressed);
 
     if (strcmp(filename, "Internal Rom.int") == 0) {
          // disable PICO from supplying its own rom when the nmi routine exits
@@ -454,7 +471,7 @@ void nmi_action_change_rom() {
             pico_read(file, sna_load_buffer, file_size);
             int res = LZ4_decompress_safe_partial(sna_load_buffer, 
                 reinterpret_cast<char*>(rom_data), file_size, 16384, 16384);
-            printf("Decompress result: %d, original size: %d\n", res, file_size);
+            LOG("Decompress result: %d, original size: %d\n", res, file_size);
         }
         else {
             pico_read(file, sna_load_buffer, SNA_SIZE);
@@ -470,15 +487,15 @@ void nmi_action_change_rom() {
 void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint8_t action = nmi_rom_data[1];
-    printf("Action to process: %d\n", action);
+    LOG("Action to process: %d\n", action);
     if (action == ACTION_BEGIN_SNA_READ) {
         uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
-        printf("Loading %s\n", nmi_rom_data + nameoffset);
+        LOG("Loading %s\n", nmi_rom_data + nameoffset);
         load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
 
-        printf("Start SNA, head destination: %X\n", headeroffset);
+        LOG("Start SNA, head destination: %X\n", headeroffset);
         // for (int i = 0; i < 27; i++)
         //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
         memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
@@ -489,21 +506,21 @@ void process_nmi_request() {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
         uint32_t tocopy = MIN(count, current_sna_size - current_sna_offset);
-        printf("Continue SNA, destination: %X, count: %X\n", offset, tocopy);
+        LOG("Continue SNA, destination: %X, count: %X\n", offset, tocopy);
         memcpy(nmi_rom_data + offset, current_sna_data + current_sna_offset, tocopy);
         current_sna_offset += tocopy;
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
     }  else if (action == ACTION_SNA_BEGIN_WRITE) {
         uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
-        printf("Start SNA save, head destination: %X\n", headeroffset);
+        LOG("Start SNA save, head destination: %X\n", headeroffset);
         memcpy(sna_load_buffer, nmi_rom_data + headeroffset, 27);
         current_sna_write_offset = 27;
     }  else if (action == ACTION_SNA_NEXT_WRITE) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
         uint32_t tocopy = MIN(count, SNA_SIZE - current_sna_write_offset);
-        printf("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
+        LOG("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
         memcpy(sna_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
        current_sna_write_offset += tocopy;
     } else if (action == ACTION_SNA_LIST) {
@@ -521,14 +538,58 @@ void process_nmi_request() {
     nmi_rom_data[0] = 0;
 }
 
+
+// Attempt to obtain snapshot from the running spectrum
+const uint8_t* getSnapshotData(size_t& snapshotLength) {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+
+    bool loggingWasEnabled = enable_logging;
+    enable_logging = false;
+    const uint8_t* data = nullptr;
+
+    if (send_nmi_request(STARTUP_ACTION_TRANSFER_SNAP, 0, 0)) {
+        while (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
+            if (nmi_rom_data[0] == 255) {
+                process_nmi_request();
+            }            
+            //sleep_ms(1);
+        }
+        snapshotLength = SNA_SIZE;
+        data = reinterpret_cast<const uint8_t*>(sna_load_buffer);
+    }
+
+    enable_logging = loggingWasEnabled;
+    return data;
+}
+
 void init_file_system() {
-       if (pico_mount(false) != LFS_ERR_OK) {
-        printf("Mount failed, try formatting\n");
+    if (pico_mount(false) != LFS_ERR_OK) {
+        LOG("Mount failed, try formatting\n");
         if (pico_mount(true) != LFS_ERR_OK) {
-            printf("Mount failed, after formatting\n");
+            LOG("Mount failed, after formatting\n");
         }
     }
 }
+
+
+bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    memcpy(nmi_rom_data, NMI_ROM, NMI_ROM_SIZE);
+
+    if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
+        return false;
+    }
+    else {
+        nmi_rom_data[0] = 0;
+        nmi_rom_data[STARTUP_COMMAND_OFFSET] = command;
+        rom_state.flags |= 2;
+        gpio_put(PIN_NMI, false);
+        sleep_ms(3);
+        gpio_put(PIN_NMI, true);
+        return true;
+    }
+}
+
 
 
 //#define ENABLE_WIFI
@@ -628,18 +689,8 @@ int main() {
             }
 
             if (count < 1000) {
-                printf("Try to send nmi: %d\n", count);
-                memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
-
-                if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
-                    printf("Not issuing NMI because one is already active\n");
-                }
-                else {
-                    nmi_rom_data[0] = 0;
-                    rom_state.flags |= 2;
-                    gpio_put(PIN_NMI, false);
-                    sleep_ms(3);
-                    gpio_put(PIN_NMI, true);
+                if (!send_nmi_request(0, 0, 0)) {
+                    printf("Couldn't send NMI because an NMI is already active.\n");
                 }
             }
         }

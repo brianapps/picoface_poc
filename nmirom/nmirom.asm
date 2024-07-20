@@ -68,6 +68,13 @@ ACTION_ROM_CHANGE equ 0x08
 // status return is 0 for success, 1 for file exists, anything else is an error
 
 
+STARTUP_ACTION_TRANSFER_SNAP equ 0x1
+STARTUP_ACTION_LOAD_SNAP equ 0x2
+
+STARTUP_ACTION_SAVE_MEMORY equ 0x3
+STARTUP_ACTION_LOAD_MEMORY equ 0x4
+
+
 
 
     MACRO MENU_ITEM key, y, x, msg, handler
@@ -109,7 +116,7 @@ IM2HANDLER_SIZE: equ $ - im2handler
 
 TEST_AREA: equ 32768
 PIXEL_SIZE: equ 192 * 32
-    
+
 
 nmientry:
     org 0x66
@@ -164,9 +171,6 @@ nmientry:
     ld a, 0b100
     ld (sna_on_entry + SNAHEADER.IFF2), a
 
-    call getimmode
-    ld (immoddesave), a
-
 
 .interruptsweredisbled:    
     ld hl, SCREEN
@@ -174,7 +178,13 @@ nmientry:
     ld bc, 6912
     ldir
 
-    call startmenu
+    ld a, (start_up_action)
+    cp ACTION_BEGIN_SNA_READ
+    jr nz, 1F
+    call sendsnapshottopico
+    jr .exittopscreen
+
+1:  call startmenu
 
 .exittopscreen
 
@@ -202,14 +212,12 @@ self_modify_exit:
 exitnmi:
     ret
 
-oldborder:
-    .byte 0
-immoddesave:
-    .byte 0
 iff2save:
     .byte 0
 
-
+start_up_action: BYTE 0    
+start_up_param1: WORD 0
+start_up_param2: WORD 0
 
 ; -------------------------------------------
 ; Start up menu
@@ -1040,6 +1048,8 @@ BORD BYTE
 sendsnapshottopico:
     push ix
     ld ix, 0
+    call getimmode
+    ld (sna_on_entry + SNAHEADER.IM), a
     ld hl, sna_on_entry
     ld (ix + 2), hl
     ld (ix + 1), ACTION_SNA_BEGIN_WRITE
@@ -1179,21 +1189,15 @@ getimmode:
     ldir
 
     ld a, i
-    //push af
-
     ld c, a
 
     ld a, 0x3D
     ld i, a
 
+    ld b, 0
     ei
     halt
     di
-
-
-    //pop af
-    //ld i, a
-
     ld a, c
     ld i, a
     ld a, b    
@@ -1617,7 +1621,7 @@ stack_top:
 
 screen_save: BLOCK 6912
 
-sna_header: BLOCK 27
+sna_header: BLOCK SNAHEADER
 
 spare_size: equ 0x4000 - $
 
