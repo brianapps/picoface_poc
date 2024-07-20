@@ -9,7 +9,7 @@
             "type": "cortex-debug",
             "servertype": "openocd",
             "serverpath": "${userHome}/.pico-sdk/openocd/v0.12.0-2/bin/openocd.exe",
-            "gdbPath": "gdb",
+            "gdbPath": "gdb-multiarch",
             "device": "RP2040",
             "configFiles": [
                 "interface/cmsis-dap.cfg",

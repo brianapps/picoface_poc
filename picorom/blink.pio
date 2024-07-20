@@ -45,3 +45,11 @@
     MOV OSR, NULL SIDE 1
     OUT PINDIRS, 8 SIDE 0
 .wrap
+
+
+.program pushpull
+.wrap_target
+    PULL
+    MOV ISR, OSR
+    PUSH
+.wrap

@@ -61,13 +61,24 @@ const uint SM_OUTDATA = 1;
 
 
 struct MYSTATE {
+    // bit 0 is set if we are serving a rom from the pico
+    // bit 1 is set if we should serve the nmi rom when
     uint32_t flags;
+    // non-zero if the nmi rom is active.
     uint32_t nmi_active;
-    uint32_t writable;
+    // The addres in ROM that writes are enabled for. If a ROM is active then
+    // we allow writes from this address onwards. For writable ROM we prevent
+    // write below address 16 because the normal Spectrum rom does write to
+    // these lower locations in a number of places and relies on this having
+    // no effect. Setting this value above 16KB effectively disables writes and
+    // means if are serving a ROM
+    uint32_t writableStartAddress;
     uint32_t flags_on_nmi_exit;
 };
 
-volatile struct MYSTATE rom_state = {0};
+volatile struct MYSTATE rom_state = {
+    .flags = 0,  .nmi_active=0, .writableStartAddress=32768, .flags_on_nmi_exit= 0
+};
 uint8_t rom_data[32768];
 
 bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2);
@@ -91,12 +102,14 @@ void LOG(const char* format, ...) {
 // extern const uint32_t NMI_ROM_SIZE;
 
 void __time_critical_func(serverom)() {
-    //register unsigned nmi_exit __asm("r10") = (1 << 14 | 0x80) << 17;
-    //register unsigned nmi_entry __asm("r11") = (1 << 14 | 0x66) << 17;
     // r8 holds nmiexit address shifted, or 1 if disabled
     asm(
-    "   mov r0, #1\n"
-    "   mov r8, r0\n"
+    
+    "   mov r0, #1\n" 
+    "   mov r8, r0\n"                             // R8 is the NMI exit address shift, 1 is an invalid value
+    "   lsl r0, r0, #15\n"
+    "   mov r10, r0\n"                            // r10 is wriable address start and is initialised to 
+                                                  // something outside the address range we handle.
     "   mov r4, %[rom_data]\n"
     "main_loop:\n"
     "   ldr r1,=%[addr_mask]\n"
@@ -105,7 +118,7 @@ void __time_critical_func(serverom)() {
     "   lsr r0, r0, %[rx0empty_shift]\n"
     "   bcs check_fifo_empty\n"
     "   ldr r0, [ %[base], %[sm0_rx_offset]]\n"   // r0 now holds data and address
-    "   and r1, r0, r1\n"               // r1 now holds just address
+    "   and r1, r0, r1\n"                         // r1 now holds just address
     "   lsl r2, r0, #17\n"                        // carry flag is set for a read, and clear for a write
     "   bcc write_op\n"
     "   ldr r3, [ %[rom_state], #0]\n"            // r3 holds rom_sate
@@ -113,33 +126,40 @@ void __time_critical_func(serverom)() {
     "   bcc read_rom_disabled\n"
     "   beq send_data\n"
     "   cmp r2, %[nmiaddr]\n"
-   // "   str r0, [ %[base], %[sm1_tx_offset] ]\n"
     "   beq activate_nmi\n"
     "send_data:\n"
     "   ldrb r0, [r4, r1]\n"
-    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"
+    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"   // This is effectively a pio_sm_put call
     // Check if have reached the exit point of the nmi routine
-    //"   bics r2, r2, #31\n" // allow nmi to exit with either a M1 read or normal read of the exit address
+    // allow nmi to exit with either a M1 read or normal read of the exit address
     "   lsl r2, r2, #1\n"
     "   cmp r2, r8\n" // allow nmi to exit with either a M1 read or normal read of the exit address
     "   bne main_loop\n"
 
     // leaving nmi rom now
-    "   ldr r0, [%[rom_state], #12]\n"
+    "   ldr r0, [%[rom_state], #12]\n"     // read flags_on_nmi_exit
     "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what it was prior to entering the nmi routine
-    "   mov r0, #1\n"                      // r8 is set to an invalid shifted address so we have effectively disabled
-    "   mov r8, r1\n"                      // the nmi exit check from now on
+    "   ldr r0, [%[rom_state], #8]\n"      // read writableStartAddress
+    "   mov r10, r0\n"                      // and put into r9 for later checks 
+    "   mov r0, #1\n"                      // r8 is set to an invalid shifted address, because (addr << 18) is never going to
+                                           // equal 1. Therefore we have effectively disabled the nmi exit check from now on
+    "   mov r8, r1\n"                       
     "   mov r4, %[rom_data]\n"             // Restore the rom address to the normal rom, regardless of whether the rom is enabled or not
     // And need to set a variable to say we aren't in the nmi anymore
     "   mov r0, #0\n"
     "   str r0, [%[rom_state], #4]\n"    // no longer in nmi
     "   b main_loop\n"
 
+    "read_rom_disabled:\n"
+    "   beq main_loop\n"                         // zero flag is set if nmi check is not required
+    "   cmp r2, %[nmiaddr]\n"
+    "   bne main_loop\n"                         // If we aren't reading the nmi entry then loop back other activate the nmi rom
 
     "activate_nmi:\n"
-    //"   str r0, [ %[base], %[sm1_tx_offset] ]\n"
-    "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
-    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
+    "   mov r0, #0\n"                            // always serve a NOP as first NMI instruction, this saves a read instruction
+                                                 // but we need to ensure that nmi.asm also has a nop at location 0x66.
+    "   str r0, [ %[base], %[sm1_tx_offset] ]\n" // Send data to the PIO like an pio_sm_put() and this sends it off to the speccy.
+    "   mov r10, r0\n"                           // NMI always allows writes, so set allowable writes from 0 onwards
     "   mov r0, #1\n"
     "   str r0, [%[rom_state], #4]\n"            // nmi routine is now active
     "   str r0, [%[rom_state], #0]\n"            // rom is enabled, because it is the nmi rom
@@ -147,35 +167,11 @@ void __time_critical_func(serverom)() {
     "   ldr r4, =%[rom_data_nmi]\n"
     "   b main_loop\n"
 
-    "read_rom_disabled:\n"
-    "   beq main_loop\n"   // zero if nmi check is not required
-    "   cmp r2, %[nmiaddr]\n"
-    "   bne main_loop\n"
-    "   mov r0, #0\n"                              // always serve a NOP as first NMI instruction, this saves a read instruction
-    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"  //
-    "   mov r1, #1\n"
-    "   str r1, [%[rom_state], #4]\n"            // we are now in nmi routine
-    "   str r1, [%[rom_state], #0]\n"            // and the rom is enabled
-    "   mov r8, %[nmiexit]\n"                    // and set r8 to nmi exit address
-    "   mov r4, %[rom_data]\n"
-    "   mov r0, #1\n"
-    "   lsl r0, #14\n"
-    "   add r4, r4, r0\n"
-    "   b main_loop\n"
     "write_op:\n"
-    // r0 is data and address
-    // writes are allowed if we using the nmi rom ..
-    "   cmp r8, %[nmiexit]\n"
-    "   bne main_loop\n"
-    // of if configured to allow it ..
-    // "   ldr r2, [%[rom_state], #8 ]\n"
-    // "   cmp r2, #0\n"
-    // "   beq main_loop\n"
-    // // and address above 16 (because the normal spectrum rom writes 
-    // // to some lower locations and we want to ignore them)
-    // "   cmp r1, #16\n"
-    // "   blt main_loop\n"
-    // "perform_write:"
+    // r0 is data and address, r1 is just address
+    // writes are allowed from the address in r10 onwards
+    "   cmp r1, r10\n"
+    "   blo main_loop\n"
     "   lsr r0, r0, #16\n"
     "   strb r0, [r4, r1]\n"
     "   b main_loop\n"
@@ -193,7 +189,7 @@ void __time_critical_func(serverom)() {
       [rom_data]  "h" (rom_data),
       [rom_data_nmi]  "i" (rom_data + 16384)
       
-    : "r0", "r2", "r1", "r3", "r4", "r8"
+    : "r0", "r2", "r1", "r3", "r4", "r8", "r10"
     );
 
     return;
@@ -432,6 +428,10 @@ void nmi_action_list_rom() {
 void nmi_action_change_rom() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    bool makeWritable = nmi_rom_data[4] != 0;
+
+    
+
     const char* fileAndExt = reinterpret_cast<const char*>(nmi_rom_data + nameoffset);
     char filename[128];
     int filePartLen = strlen(fileAndExt);
@@ -441,11 +441,13 @@ void nmi_action_change_rom() {
     bool isCompressed = strcasecmp(ext, "romz") == 0;
     strcpy(filename + filePartLen + 1, ext);
     LOG("Rom File name and extension: %s, is compressed = %d\n", filename, isCompressed);
+    LOG("Writable: %d\n", makeWritable);
 
     if (strcmp(filename, "Internal Rom.int") == 0) {
          // disable PICO from supplying its own rom when the nmi routine exits
          // and thereby return to the Spectrum internal ROM
         rom_state.flags_on_nmi_exit = 0;
+        rom_state.writableStartAddress = 32768;
         nmi_rom_data[0] = 0;
     }
     else {
@@ -469,6 +471,7 @@ void nmi_action_change_rom() {
 
         pico_close(file);
         rom_state.flags_on_nmi_exit = 1;
+        rom_state.writableStartAddress = makeWritable ? 16 : 32768;
         nmi_rom_data[0] = 0;
     }
 }
@@ -580,6 +583,62 @@ bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
     }
 }
 
+//#define PIO_DEBUGGING
+
+
+#ifdef PIO_DEBUGGING
+
+void setup_pios() {
+    PIO pio = pio0;
+    pio_sm_claim(pio, MY_SM);
+    pio_sm_claim(pio, SM_OUTDATA);
+    
+
+    uint offset = pio_add_program(pio, &pushpull_program);
+    pio_sm_config sm_config = pushpull_program_get_default_config(offset);
+    pio_sm_init(pio, MY_SM, offset, &sm_config);
+    pio_sm_set_enabled(pio, MY_SM, true);
+
+    pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
+    pio_sm_set_enabled(pio, SM_OUTDATA, true);
+
+}
+
+void run_pio_test() {
+
+
+    serverom();
+}
+
+int main() {
+    stdio_init_all();
+    setup_pios();
+
+    rom_state.flags = 2;
+
+    multicore_launch_core1(serverom);
+
+
+    sleep_ms(1000);
+
+
+    PIO pio = pio0;
+
+    uint32_t dataval = (0x2 << 14) | 0x66;
+
+    pio_sm_put_blocking(pio, MY_SM, dataval); // entry to nmi
+    pio_sm_put_blocking(pio, MY_SM, (0x2 << 14) | EXITNMI); // exit from nmi
+
+
+    while (true) {
+        sleep_ms(1000);
+    }
+
+}
+
+
+#else
+
 
 
 //#define ENABLE_WIFI
@@ -680,7 +739,7 @@ int main() {
 
             if (count < 1000) {
                 if (!send_nmi_request(0, 0, 0)) {
-                    printf("Couldn't send NMI because an NMI is already active.\n");
+                    LOG("Couldn't send NMI because an NMI is already active.\n");
                 }
             }
         }
@@ -688,3 +747,4 @@ int main() {
     
 }
 
+#endif

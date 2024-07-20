@@ -65,6 +65,9 @@ ACTION_ROM_LIST equ 0x07
 
 ACTION_ROM_CHANGE equ 0x08
 // WORD param1 = pointer to file name to load
+// BYTE param2 = non zero if rom should be writable
+
+
 // status return is 0 for success, 1 for file exists, anything else is an error
 
 
@@ -559,6 +562,7 @@ changeromscreen:
     inc hl
     ld d, (hl)
     ex hl, de
+    ld a, (.writable)
     call changerom
     jr .redisplay
 
@@ -597,7 +601,10 @@ changeromscreen:
     MENU_END
 
 
+// Entry with HL pointing to rom name
+// and a holding the writable flag (non zero for a load rom as writable)
 changerom:
+    ld (ix + 4), a
     ld (ix + 2), hl
     ld (ix + 1), ACTION_ROM_CHANGE
     ld (ix + 0), 255
