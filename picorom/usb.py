@@ -22,7 +22,7 @@ def sendData(port, cmd, bytesToSend):
         ser.write("\r\r".encode())
         ser.read_all()
         
-        ser.write((cmd + "\r").encode())
+        ser.write((cmd + "\r").encode('ascii'))
 
         if ser.read(1) != ACK:
             print("Expecting ACK in first instance but didn't get it")
@@ -64,7 +64,7 @@ def receiveData(port, cmd):
     with serial.Serial(port, timeout=8) as ser:
         ser.write("\r\r".encode())
         ser.read_all()
-        ser.write((cmd + "\r").encode())
+        ser.write((cmd + "\r").encode('iso8859_2'))
 
         status = ser.read(1)
 
@@ -131,11 +131,12 @@ parser.add_argument('cmdparams', nargs='+')
 args = parser.parse_args()
 
 
+
 if args.input is None:
     data = receiveData(args.port, join_params(args.cmdparams))
     if args.output is None:
         print(data)
-        # print(data.decode())
+        print(data.decode('ascii',errors='ignore'))
     else:
         with open(args.output, "wb") as fp:
             fp.write(data)

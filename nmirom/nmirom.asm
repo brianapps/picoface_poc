@@ -425,6 +425,7 @@ testromdata1:
 
 ; hl points to list data
 ; de points to first menu item to update
+; it expects the order to be previous, next, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0
 updatemenulist:
     ld bc, 7
     ex hl, de
@@ -623,6 +624,9 @@ changerom:
 ; -------------------------------------------
 ; Load snapshot menu
 
+
+
+
 loadscreen:
     ld de, 0
 
@@ -630,18 +634,6 @@ loadscreen:
     ld ix, 0
     ld (ix + 1), ACTION_SNA_LIST
     ld (ix + 2), de
-
-    ; enable the previous action if fetching something that doesn't start at zero
-    ld hl, .menuprev
-    ld a, e
-    or d
-    jr z, .disableprev
-.enableprev
-    res 7, (hl)
-    jr 1F
-.disableprev
-    set 7, (hl)
-1:
     ld (.startpos), de
     ld hl, spare_space
     ld (ix + 4), hl
@@ -649,61 +641,11 @@ loadscreen:
 1:  ld a, (ix)
     cp 255
     jr z, 1B
-    ; enable the next action if there is more to fetch
-    ld hl, .menunext
-    ld a, (spare_space + 1) ; more names available? 1 if so
-    cp 1
-    jr z, .enablenext
-.disablenext
-    set 7, (hl)
-    jr 1F
-.enablenext
-    res 7, (hl)
-1:
-    ld a, (spare_space) ; count of entries
-    ld b, a
-    xor a
-    ld de, 7
-    ld hl, .menusnaps
 
-.loopkeyenabledstate:
-    cp b  // if a < b then c is set, a >= b then c is reset
-    jr c, .enablekey
-.disablekey
-    set 7, (hl)
-    jr .keycontinue
-.enablekey
-    res 7, (hl)
-.keycontinue
-    add hl, de
-    inc a
-    cp 10
-    jr nz, .loopkeyenabledstate
 
-    ld a, (spare_space) ; count of entries
-    cp 0
-    jr z, .showthemenu
-    ld b, a
-    ld hl, spare_space + 2
-    ld de, .menusnaps + 3
-
-.updatemenustrings
-    push bc
-
-    ld bc, 2
-    ldir
-
-    ld bc, 5
-    ex hl,de
-    add hl, bc
-    ex hl, de
-    pop bc
-
-    djnz .updatemenustrings
-
-    ; ld hl, spare_space + 22
-    ; ld (.menusnaps + 3), hl
-
+.updatefromdata
+    ld de, .menuprev
+    call updatemenulist
 .showthemenu
     ld hl, .menu
     call showmenu
@@ -757,9 +699,7 @@ loadscreen:
     MENU_ITEM 'x', 14, 2, .exit, .exithandler
 .menuprev
     MENU_ITEM 'p', 14, 9, .prev, .prevkeyhandler
-.menunext
     MENU_ITEM 'n', 14, 20, .next, .nextkeyhandler
-.menusnaps:
     MENU_ITEM '1', 3, 2, .snap0, .snaphandler
     MENU_ITEM '2', 4, 2, .snap0, .snaphandler
     MENU_ITEM '3', 5, 2, .snap0, .snaphandler

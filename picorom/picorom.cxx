@@ -315,50 +315,6 @@ const char* split_filename_and_get_ext(char* name) {
     return ext + 1;
 }
 
-
-void nmi_action_list_sna() {
-    uint8_t* nmi_rom_data = rom_data + 16384;
-    uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
-    uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
-    uint16_t stringoffset = destoffset + 22;
-
-    LOG("List snaps starting at %d and storing at %X\n", start, destoffset);
-
-    int dir = pico_dir_open("/");
-    int16_t foundsofar = 0;
-    struct lfs_info info;
-
-    nmi_rom_data[destoffset] = 0;
-    nmi_rom_data[destoffset + 1] = 0;
-
-    while (pico_dir_read(dir, &info) > 0) {
-        if (info.type == LFS_TYPE_REG) {
-            int filenamelen = strlen(info.name);
-            const char* ext = split_filename_and_get_ext(info.name);
-
-            if (strcasecmp(ext, "snaz") == 0 || strcasecmp(ext, "sna") == 0) {
-                if (foundsofar >= start) {
-                    int index = foundsofar - start;
-                    if (index >= 10) {
-                        nmi_rom_data[destoffset + 1] = 1;
-                        break;
-                    }
-                    nmi_rom_data[destoffset] = index + 1;
-                    nmi_rom_data[destoffset + 2 + 2 * index] = stringoffset & 0xFF;
-                    nmi_rom_data[destoffset + 2 + 2 * index + 1] = (stringoffset >> 8) & 0xFF;
-
-                    LOG("Listing %s\n", info.name);
-                    memcpy(nmi_rom_data + stringoffset, info.name, filenamelen + 1);
-                    stringoffset += filenamelen + 1;
-                }
-
-                foundsofar++;
-            }
-        }
-    }
-    pico_dir_close(dir);
-}
-
 void nmi_action_sna_save() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint16_t nameoffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
@@ -404,6 +360,40 @@ bool add_file_to_list(const char* name, const uint16_t destoffset, uint16_t& str
     stringoffset += filenamelen;
     return true;
 }
+
+
+
+void nmi_action_list_sna() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint16_t stringoffset = destoffset + 22;
+
+    LOG("List snaps starting at %d and storing at %X\n", start, destoffset);
+
+    int dir = pico_dir_open("/");
+    int16_t foundsofar = 0;
+    struct lfs_info info;
+
+    nmi_rom_data[destoffset] = 0;
+    nmi_rom_data[destoffset + 1] = 0;
+
+    while (pico_dir_read(dir, &info) > 0) {
+        if (info.type == LFS_TYPE_REG) {
+            const char* ext = split_filename_and_get_ext(info.name);
+            if (strcasecmp(ext, "snaz") == 0 || strcasecmp(ext, "sna") == 0) {
+                if (foundsofar >= start) {
+                    if (!add_file_to_list(info.name, destoffset, stringoffset))
+                        break;
+                }
+                foundsofar++;
+            }
+        }
+    }
+    pico_dir_close(dir);
+}
+
+
 
 void nmi_action_list_rom() {
     uint8_t* nmi_rom_data = rom_data + 16384;
