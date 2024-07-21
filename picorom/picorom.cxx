@@ -485,14 +485,15 @@ void process_nmi_request() {
         uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
-        LOG("Loading %s\n", nmi_rom_data + nameoffset);
-        load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
-
-        LOG("Start SNA, head destination: %X\n", headeroffset);
-        // for (int i = 0; i < 27; i++)
-        //     nmi_rom_data[headeroffset + i] = current_sna_data[i];
+        if (nameoffset != 0) {
+            LOG("Loading %s\n", nmi_rom_data + nameoffset);
+            load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
+            LOG("Start SNA, head destination: %X\n", headeroffset);
+        } else {
+            current_sna_data = sna_load_buffer;
+            current_sna_size = SNA_SIZE;    
+        }
         memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
-        //memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
         current_sna_offset = 27;
     }
     else if (action == ACTION_SNA_READ_NEXT) {
@@ -532,6 +533,25 @@ void process_nmi_request() {
 }
 
 
+//---------------------------------------------
+// CLI commands
+
+inline bool sendNmiAndWaitForCompletion(uint8_t command, uint16_t param1, uint16_t param2) {
+    // Without the volatile then the nmi_rom_data[0] is only
+    // accessed once and we fail to process requests from the nmi
+    // rom and the spectrum hangs.
+    volatile uint8_t* nmi_rom_data = rom_data + 16384;
+    if (send_nmi_request(command, param1, param2)) {
+        while (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
+            if (nmi_rom_data[0] == 255) {
+                process_nmi_request();
+            }            
+        }
+        return true;
+    }
+    return false;
+}
+
 // Attempt to obtain snapshot from the running spectrum
 const uint8_t* getSnapshotData(size_t& snapshotLength) {
     // Without the volatile then the nmi_rom_data[0] is only
@@ -555,6 +575,19 @@ const uint8_t* getSnapshotData(size_t& snapshotLength) {
 
     enable_logging = loggingWasEnabled;
     return data;
+}
+
+
+uint8_t* beginSendSnapDataToMachine() {
+    return reinterpret_cast<uint8_t*>(sna_load_buffer);
+}
+
+bool endSendSnapDataToMachine() {
+    bool loggingWasEnabled = enable_logging;
+    enable_logging = false;
+    bool ok = sendNmiAndWaitForCompletion(STARTUP_ACTION_LOAD_SNAP, 0, 0);
+    enable_logging = loggingWasEnabled;
+    return ok;
 }
 
 void init_file_system() {

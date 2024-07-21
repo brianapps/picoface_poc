@@ -17,7 +17,8 @@ BORDCR: equ  0x5C48
 
 
 ACTION_BEGIN_SNA_READ: equ 0x01
-// param1 = name pointer
+// param1 = name pointer - -- if name pointer is zero load from snapshot currently in
+// the pico memory.
 // param2 = sna header offset
 
 
@@ -182,9 +183,14 @@ nmientry:
     ldir
 
     ld a, (start_up_action)
-    cp ACTION_BEGIN_SNA_READ
+    cp STARTUP_ACTION_TRANSFER_SNAP
     jr nz, 1F
     call sendsnapshottopico
+    jr .exittopscreen
+1:  cp STARTUP_ACTION_LOAD_SNAP
+    jr nz, 1F
+    ld hl, 0
+    call loadsnapshot
     jr .exittopscreen
 
 1:  call startmenu

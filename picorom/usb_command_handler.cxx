@@ -69,6 +69,8 @@ private:
     bool atEOF;
     uint32_t total_size; // or -1 if unspecified
     uint16_t packetRemaining;
+    uint32_t totalExpecting; // or -1 if unspecified
+    uint32_t totalRead;
 
     inline void putchar(char c) {
         stdio_usb.out_chars(&c, 1);
@@ -83,7 +85,17 @@ private:
 
 public:
 
-    bool begin();
+
+    bool atEndOfFile() {
+        if (!atEOF && isOK && packetRemaining == 0) {
+            nextPacket(make_timeout_time_ms(8000));
+        }
+        return atEOF;
+    }
+
+    void close();
+
+    bool begin(uint32_t bytesExpecting = -1);
     // 
     int read(char* buffer, int len, absolute_time_t expiry);
 };
@@ -216,6 +228,8 @@ bool CommStreamWriter::begin(uint32_t totalSize) {
     return isOK;
 }
 
+
+
 bool CommStreamWriter::write(const char* buffer, int len, absolute_time_t expiry) {
     int sentSoFar = 0;
     while (isOK && sentSoFar < len) {
@@ -246,8 +260,10 @@ bool CommStreamWriter::end() {
 
 
 
-bool CommStreamReader::begin() {
+bool CommStreamReader::begin(uint32_t bytesExpecting) {
     atEOF = false;
+    totalExpecting = bytesExpecting;
+    totalRead = 0;
 
     putchar(ACK);
 
@@ -272,6 +288,24 @@ bool CommStreamReader::begin() {
 }
 
 
+// Some client expect a packet to be completely read before they accept responses
+// so this routine completes (and discards) data in outstanding packets
+void CommStreamReader::close() {
+    if (isOK && !atEOF) {
+        absolute_time_t expiry = make_timeout_time_ms(8000);
+        while (packetRemaining > 0) {
+            char buffer[1024];
+            int toRead = MIN(sizeof(buffer), packetRemaining);
+            int read = getchars(buffer, toRead, expiry);  
+            if (read < 0)
+                break;
+            packetRemaining -= read;
+        }
+        isOK = false;
+    }
+}
+
+
 void CommStreamReader::nextPacket(absolute_time_t expiry) {
     char header[4];
     // Acknowledge have processed the prevous packet and ready for the next
@@ -281,7 +315,12 @@ void CommStreamReader::nextPacket(absolute_time_t expiry) {
     if (isOK) {
         if (header[0] == EOT) {
             atEOF = true;
-            putchar(ACK);
+            if (totalExpecting != -1 && totalExpecting != totalRead) {
+                printf("XReached end but expected %d bytes, recieved %d\n", totalExpecting, totalRead);
+            }
+            else {
+                putchar(ACK);
+            }
         }
         if (header[0] == SOH) {
             isOK = getchars(header, 3, expiry) == 3 &&
@@ -311,6 +350,7 @@ int CommStreamReader::read(char* buffer, int len, absolute_time_t expiry) {
             if (read > 0) {
                 readsofar += read;
                 packetRemaining -= read;
+                totalRead += read;
             }
             else {
                 isOK = false;
@@ -495,6 +535,27 @@ void handleSnapDownload() {
 
 }
 
+void handleSnapUpload() {
+    CommStreamReader reader;
+    if (reader.begin(SNA_SIZE)) {
+        uint8_t* buffer = beginSendSnapDataToMachine();
+        int read = reader.read(reinterpret_cast<char*>(buffer), SNA_SIZE, make_timeout_time_ms(8000));
+        if (read != SNA_SIZE || !reader.atEndOfFile()) {
+            reader.close();
+            printf("XError, SNA size is wrong got %d and%s more available, expected %d.", 
+                read, reader.atEndOfFile() ? " no" : "", SNA_SIZE);
+        }
+        else if (endSendSnapDataToMachine()) {
+            putchar(ACK);
+        }
+        else {
+            printf("XFailed to send snapshot to machine.");
+        }
+    }
+    else {
+        printf("X!!!");
+    }
+}
 
 
 static char commandBuffer[512];
@@ -544,11 +605,12 @@ void pollUsbCommandHandler() {
             else if (strcmp(commandBuffer, "snapdownload") == 0) {
                 handleSnapDownload();
             }
+            else if (strcmp(commandBuffer, "snapupload") == 0) {
+                handleSnapUpload();
+            }            
             else if (commandBuffer[0] != '\0') {
                 printf("XUnknown command: %s\n", commandBuffer);
             }
-
-
             commandLength = 0;
         }
         else {
