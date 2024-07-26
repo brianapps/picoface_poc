@@ -20,7 +20,7 @@ def read_pin_defs(filename) -> dict:
 
 
 
-sym_file = pathlib.Path('/home/brian/dev/kicad/demo_parta/') / 'mysyms.kicad_sym'
+sym_file = pathlib.Path('/home/brian/dev/kicad/picoface_16v8') / 'mysyms.kicad_sym'
 
 
 with sym_file.open('r') as fp:
@@ -81,8 +81,8 @@ def update_symbol(syms, part_name, pin_file):
 
         
 
-update_symbol(syms, 'GAL_CHIPA', 'GAL16v8_A.pin')
-update_symbol(syms, 'GAL_CHIPB', 'GAL16v8_B.pin')
+update_symbol(syms, 'GAL_CHIPA', 'GAL16v8_D.pin')
+update_symbol(syms, 'GAL_CHIPB', 'GAL16v8_C.pin')
 
 
 
