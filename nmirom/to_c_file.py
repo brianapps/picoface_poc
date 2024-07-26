@@ -38,7 +38,7 @@ with open("../picorom/nmi.c", "w") as fp:
     if romdata[exitnmi] != 201:
         print("exit is not simple ret")
         exitnmi += 1
-    fp.write(f"const uint32_t EXITNMI = 0x{exitnmi:x};\n")
+    
 
     # fp.write(f"const uint16_t STARTUP_COMMAND_OFFSET = 0x{startup_command:x};\n")
     # fp.write(f"const uint16_t STARTUP_PARAM1_OFFSET = 0x{startup_param1:x};\n")
@@ -47,10 +47,13 @@ with open("../picorom/nmi.c", "w") as fp:
 
 with open("../picorom/nmi.h", "w") as fp:
 
+    fp.write("#ifndef __ASSEMBLER__\n")
     fp.write("extern const uint8_t NMI_ROM[];\n")
     fp.write("extern const uint32_t NMI_ROM_SIZE;\n")
-    fp.write("extern const uint32_t EXITNMI;\n")
+    fp.write("#endif\n")
 
+
+    fp.write(f"#define EXITNMI 0x{exitnmi:x}\n")
     fp.write(f"#define STARTUP_COMMAND_OFFSET 0x{startup_command:x}\n")
     fp.write(f"#define STARTUP_PARAM1_OFFSET 0x{startup_param1:x}\n")
     fp.write(f"#define STARTUP_PARAM2_OFFSET 0x{startup_param2:x}\n")    

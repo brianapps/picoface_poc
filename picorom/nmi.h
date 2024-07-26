@@ -1,6 +1,8 @@
+#ifndef __ASSEMBLER__
 extern const uint8_t NMI_ROM[];
 extern const uint32_t NMI_ROM_SIZE;
-extern const uint32_t EXITNMI;
+#endif
+#define EXITNMI 0x118
 #define STARTUP_COMMAND_OFFSET 0x11a
 #define STARTUP_PARAM1_OFFSET 0x11b
 #define STARTUP_PARAM2_OFFSET 0x11d

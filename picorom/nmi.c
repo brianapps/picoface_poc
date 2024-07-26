@@ -257,4 +257,3 @@ const uint8_t NMI_ROM[] = {
 };
 
 const uint32_t NMI_ROM_SIZE = sizeof(NMI_ROM);
-const uint32_t EXITNMI = 0x118;

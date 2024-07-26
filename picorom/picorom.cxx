@@ -95,106 +95,7 @@ void LOG(const char* format, ...) {
 }
 
 
-// // The RETN instruction is two bytes (ED 45) so the exit address is the 
-// // for the second byte of the instruction.
-// extern const uint32_t EXITNMI;
-// extern const uint8_t NMI_ROM[];
-// extern const uint32_t NMI_ROM_SIZE;
-
-void __time_critical_func(serverom)() {
-    // r8 holds nmiexit address shifted, or 1 if disabled
-    asm(
-    
-    "   mov r0, #1\n" 
-    "   mov r8, r0\n"                             // R8 is the NMI exit address shift, 1 is an invalid value
-    "   lsl r0, r0, #15\n"
-    "   mov r10, r0\n"                            // r10 is wriable address start and is initialised to 
-                                                  // something outside the address range we handle.
-    "   mov r4, %[rom_data]\n"
-    "main_loop:\n"
-    "   ldr r1,=%[addr_mask]\n"
-    "check_fifo_empty:\n"
-    "   ldr r0, [ %[base], %[fstat_offset]]\n"
-    "   lsr r0, r0, %[rx0empty_shift]\n"
-    "   bcs check_fifo_empty\n"
-    "   ldr r0, [ %[base], %[sm0_rx_offset]]\n"   // r0 now holds data and address
-    "   and r1, r0, r1\n"                         // r1 now holds just address
-    "   lsl r2, r0, #17\n"                        // carry flag is set for a read, and clear for a write
-    "   bcc write_op\n"
-    "   ldr r3, [ %[rom_state], #0]\n"            // r3 holds rom_sate
-    "   lsr r3, r3, #1\n"                         // CC is set if rom enable, zero flag is NMI check is enabled
-    "   bcc read_rom_disabled\n"
-    "   beq send_data\n"
-    "   cmp r2, %[nmiaddr]\n"
-    "   beq activate_nmi\n"
-    "send_data:\n"
-    "   ldrb r0, [r4, r1]\n"
-    "   str r0, [ %[base], %[sm1_tx_offset] ]\n"   // This is effectively a pio_sm_put call
-    // Check if have reached the exit point of the nmi routine
-    // allow nmi to exit with either a M1 read or normal read of the exit address
-    "   lsl r2, r2, #1\n"
-    "   cmp r2, r8\n" // allow nmi to exit with either a M1 read or normal read of the exit address
-    "   bne main_loop\n"
-
-    // leaving nmi rom now
-    "   ldr r0, [%[rom_state], #12]\n"     // read flags_on_nmi_exit
-    "   str r0, [%[rom_state], #0]\n"      // restore the rom_state to what it was prior to entering the nmi routine
-    "   ldr r0, [%[rom_state], #8]\n"      // read writableStartAddress
-    "   mov r10, r0\n"                      // and put into r9 for later checks 
-    "   mov r0, #1\n"                      // r8 is set to an invalid shifted address, because (addr << 18) is never going to
-                                           // equal 1. Therefore we have effectively disabled the nmi exit check from now on
-    "   mov r8, r1\n"                       
-    "   mov r4, %[rom_data]\n"             // Restore the rom address to the normal rom, regardless of whether the rom is enabled or not
-    // And need to set a variable to say we aren't in the nmi anymore
-    "   mov r0, #0\n"
-    "   str r0, [%[rom_state], #4]\n"    // no longer in nmi
-    "   b main_loop\n"
-
-    "read_rom_disabled:\n"
-    "   beq main_loop\n"                         // zero flag is set if nmi check is not required
-    "   cmp r2, %[nmiaddr]\n"
-    "   bne main_loop\n"                         // If we aren't reading the nmi entry then loop back other activate the nmi rom
-
-    "activate_nmi:\n"
-    "   mov r0, #0\n"                            // always serve a NOP as first NMI instruction, this saves a read instruction
-                                                 // but we need to ensure that nmi.asm also has a nop at location 0x66.
-    "   str r0, [ %[base], %[sm1_tx_offset] ]\n" // Send data to the PIO like an pio_sm_put() and this sends it off to the speccy.
-    "   mov r10, r0\n"                           // NMI always allows writes, so set allowable writes from 0 onwards
-    "   mov r0, #1\n"
-    "   str r0, [%[rom_state], #4]\n"            // nmi routine is now active
-    "   str r0, [%[rom_state], #0]\n"            // rom is enabled, because it is the nmi rom
-    "   mov r8, %[nmiexit]\n"                    // and set r8 to nmi exit address
-    "   ldr r4, =%[rom_data_nmi]\n"
-    "   b main_loop\n"
-
-    "write_op:\n"
-    // r0 is data and address, r1 is just address
-    // writes are allowed from the address in r10 onwards
-    "   cmp r1, r10\n"
-    "   blo main_loop\n"
-    "   lsr r0, r0, #16\n"
-    "   strb r0, [r4, r1]\n"
-    "   b main_loop\n"
-    :
-    : [base] "r" (PIO0_BASE), 
-      [nmiaddr] "h" ((0 << 14 | 0x66) << 17),
-      [nmiexit] "h" ((0 << 14 | EXITNMI) << 18),
-      [fstat_offset] "I" (PIO_FSTAT_OFFSET),
-      [sm0_rx_offset] "I" (PIO_RXF0_OFFSET),
-      [sm0_tx_offset] "I" (PIO_TXF0_OFFSET),
-      [sm1_tx_offset] "I" (PIO_TXF0_OFFSET + 4),
-      [rx0empty_shift] "I" (PIO_FSTAT_RXEMPTY_LSB + 1),
-      [addr_mask] "i" (0x3FFF),
-      [rom_state] "r" (&rom_state),
-      [rom_data]  "h" (rom_data),
-      [rom_data_nmi]  "i" (rom_data + 16384)
-      
-    : "r0", "r2", "r1", "r3", "r4", "r8", "r10"
-    );
-
-    return;
-}
-
+extern "C" void piohandler();
 
 
 void __time_critical_func(do_my_pio)() {
@@ -231,7 +132,10 @@ void __time_critical_func(do_my_pio)() {
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
 
-    serverom();
+
+    
+
+    piohandler();
 }
 
 #define SNA_SIZE 49179
