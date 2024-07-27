@@ -69,6 +69,20 @@ ACTION_ROM_CHANGE equ 0x08
 // BYTE param2 = non zero if rom should be writable
 
 
+ACTION_WRITE_DATA_TO_PICO equ 0x09
+// WORD param1 pointer to source location of data (in spectrum rom)
+// WORD param2 offset address to write data must be >= 16384
+// WORD param3 length of source data
+
+
+ACTION_READ_DATA_FROM_PICO equ 0x0A
+// WORD param1 pointer to destination location (in spectrum rom)
+// WORD param2 offset address to read from must be >= 16384
+// WORD param3 length of source data
+
+
+
+
 // status return is 0 for success, 1 for file exists, anything else is an error
 
 
@@ -76,8 +90,11 @@ STARTUP_ACTION_TRANSFER_SNAP equ 0x1
 STARTUP_ACTION_LOAD_SNAP equ 0x2
 
 STARTUP_ACTION_SAVE_MEMORY equ 0x3
+// PARAM1 is source location
+// PARAM2 is total length
 STARTUP_ACTION_LOAD_MEMORY equ 0x4
-
+// PARAM1 is destination location
+// PARAM2 is total length
 
 
 
@@ -96,7 +113,6 @@ STARTUP_ACTION_LOAD_MEMORY equ 0x4
 
 
     org 0x0
-
 action: defb 0
 action_params:
 
@@ -177,21 +193,36 @@ nmientry:
 
 
 .interruptsweredisbled:    
-    ld hl, SCREEN
-    ld de, screen_save
-    ld bc, 6912
-    ldir
-
     ld a, (start_up_action)
-    cp STARTUP_ACTION_TRANSFER_SNAP
+
+    cp STARTUP_ACTION_LOAD_MEMORY
     jr nz, 1F
-    call sendsnapshottopico
-    jr .exittopscreen
+    call startupactionloadmemory
+    jr .exitnoscreenrestore
+
+1:  cp STARTUP_ACTION_SAVE_MEMORY
+    jr nz, 1F
+    call startupactionsavememory
+    jr .exitnoscreenrestore
+
 1:  cp STARTUP_ACTION_LOAD_SNAP
     jr nz, 1F
     ld hl, 0
     call loadsnapshot
+    jr .exitnoscreenrestore
+
+    // The save snapshot action reuses the menu handling code
+    // and uses the saved screen buffer
+1:  ld hl, SCREEN
+    ld de, screen_save
+    ld bc, 6912
+    ldir
+
+    cp STARTUP_ACTION_TRANSFER_SNAP
+    jr nz, 1F
+    call sendsnapshottopico
     jr .exittopscreen
+
 
 1:  call startmenu
 
@@ -202,6 +233,7 @@ nmientry:
     ld bc, 6912
     ldir
 
+.exitnoscreenrestore
     pop ix, hl, de, bc
 
     ld a, (iff2save)
@@ -224,9 +256,127 @@ exitnmi:
 iff2save:
     .byte 0
 
-start_up_action: BYTE 0    
-start_up_param1: WORD 0
-start_up_param2: WORD 0
+; start_up_action: BYTE 0    
+; start_up_param1: WORD 0
+; start_up_param2: WORD 0
+
+
+start_up_action: BYTE STARTUP_ACTION_LOAD_MEMORY  
+start_up_param1: WORD 40000
+start_up_param2: WORD 20000
+
+spare_size_hi .equ (spare_size - 255) / 256
+
+
+startupactionloadmemory:
+    ld de, (start_up_param1)
+    ld bc, (start_up_param2)
+    ld ix, 0
+
+.transfer:
+    ld a, spare_size_hi
+    cp b
+    jr nc, .last_block
+    push bc
+    ld b, spare_size_hi
+
+    // WORD param1 pointer to source location of data (in spectrum rom)
+    // WORD param2 offset address to write data must be >= 16384
+    // WORD param3 length of source data
+    ld hl, spare_space
+    ld (ix + 2), hl
+    ld (ix + 4), de
+    ld (ix + 6), bc
+    ld (ix + 1), ACTION_READ_DATA_FROM_PICO
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B 
+    ldir
+
+    pop bc
+
+    sub hl, de
+
+    ld a, b
+    sub spare_size_hi
+    ld b, a
+    ld c, 0
+    jr .transfer
+
+.last_block:
+    // last block could be nothing so return
+    ld a, b
+    or c
+    ret z
+
+    ld hl, spare_space
+    ld (ix + 2), hl
+    ld (ix + 4), de
+    ld (ix + 6), bc
+    ld (ix + 1), ACTION_READ_DATA_FROM_PICO
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B 
+    ldir
+    ret
+
+
+startupactionsavememory:
+    ld hl, (start_up_param1)
+    ld bc, (start_up_param2)
+    ld ix, 0
+
+.transfer:
+    
+
+    ld a, 13
+    cp b
+    jr nc, .last_block
+    push bc
+    ld b, 13
+
+
+    // WORD param1 pointer to source location of data (in spectrum rom)
+    // WORD param2 offset address to write data must be >= 16384
+    // WORD param3 length of source data
+    ld de, spare_space
+    ld (ix + 2), de
+    ld (ix + 4), hl
+    ld (ix + 6), bc
+    ld (ix + 1), ACTION_WRITE_DATA_TO_PICO
+    ldir
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+    pop bc
+
+    ld a, b
+    sub 13
+    ld b, a
+    ld c, 0
+    jr .transfer
+
+.last_block:
+    // last block could be nothing so return
+    ld a, b
+    or c
+    ret z
+
+    ld de, spare_space
+    ld (ix + 2), de
+    ld (ix + 4), hl
+    ld (ix + 6), bc
+    ld (ix + 1), ACTION_WRITE_DATA_TO_PICO
+    ldir
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+    ret
+
 
 ; -------------------------------------------
 ; Start up menu
@@ -425,34 +575,6 @@ menuhandler_with_keydown_handler:
 
 .keydown_handler WORD 0
 
-; ---------------------------------------------
-;
-
-testromdata:
-    byte 10  ; number of items
-    byte 1  ; are there more
-    word .rom1, .rom2, .rom3, .rom4, .rom5, .rom6, .rom7, .rom8, .rom9, .rom10
-.rom1 DZ "The first rom"
-.rom2 DZ "The second"
-.rom3 DZ "Third"
-.rom4 DZ "AAD"
-.rom5 DZ "EADSE"
-.rom6 DZ "4th"
-.rom7 DZ "4th"
-.rom8 DZ "4th"
-.rom9 DZ "4th"
-.rom10 DZ "The stuff"
-
-
-testromdata1:
-    byte 3  ; number of items
-    byte 0  ; are there more
-    word .rom1, .rom2, .rom3, 0, 0, 0, 0, 0, 0, 0
-.rom1 DZ "Page Two"
-.rom2 DZ "Another one"
-.rom3 DZ "And the final"
-
-
 
 ; hl points to list data
 ; de points to first menu item to update
@@ -515,10 +637,6 @@ updatemenulist:
     djnz 1B
 
     ret
-
-
-
-
 
 changeromscreen:
     ld ix, 0
@@ -658,10 +776,6 @@ changerom:
 
 ; -------------------------------------------
 ; Load snapshot menu
-
-
-
-
 loadscreen:
     ld de, 0
 
@@ -1606,6 +1720,7 @@ reverseattr:
 
 
 clearscreen:
+    // Clear 17 lines of attributes
     ld hl, SCREEN_ATTRIB
     ld a, 0b000111  // black paper, white ink
     ld (hl), a
@@ -1614,11 +1729,30 @@ clearscreen:
     ldir
 
     xor a
+    // Clear 16 lines of pixel data, this is contiguous
     ld hl, SCREEN
     ld (hl),a
     ld de, SCREEN + 1
     ld bc, 32 * 16 * 8 - 1   // clear 16 rows of 32 characters each that is 8 pixels high
     ldir
+
+    // Then the clear the 17th line a row at a time
+
+    ld hl, SCREEN + 32 * 16 * 8
+    xor a
+    ld b, 8
+.nextrow
+    push hl
+    push bc
+    ld de, hl
+    inc de
+    ld (hl), a
+    ld bc, 31
+    ldir
+    pop bc
+    pop hl
+    inc h
+    djnz .nextrow
     ret
 
 

@@ -16,8 +16,8 @@ mv <filename> <filename1>
 upload <filename>
 download <filename>
 
-memread <start> <length>
-memwrite <start> <length>
+memupload <start>
+memdownload <start> <length>
 snapupload
 snapdownload
 
@@ -557,6 +557,58 @@ void handleSnapUpload() {
     }
 }
 
+void handleMemDownload(const char* start, const char* len) {
+    uint32_t startAddress = atoi(start);
+    uint32_t lengthCount = atoi(len);
+
+    if (startAddress >= 16384 && startAddress + lengthCount < 0x10000) {
+        if (!readMachineMemToLoadBuffer(startAddress, lengthCount)) {
+            printf("XFailed to read machine memory.");
+            return;
+        }
+        CommStreamWriter writer;
+        writer.begin(lengthCount);
+        uint8_t* data = getRamLoadBuffer() + startAddress - 16384;
+        writer.write(reinterpret_cast<const char*>(data), lengthCount, make_timeout_time_ms(8000));
+        writer.end();
+        return;
+    }
+
+    printf("XBad params to memdownload.");
+    return;
+}
+
+
+void handleMemUpload(const char* start) {
+    uint32_t startAddress = atoi(start);
+
+    if (startAddress >= 16384 && startAddress < 0x10000) {
+        uint8_t* data = getRamLoadBuffer() + startAddress - 16384;
+        int maxLen = 0x10000 - startAddress;
+
+        CommStreamReader reader;
+        reader.begin();
+        int bytesRead = reader.read(reinterpret_cast<char*>(data), maxLen, make_timeout_time_ms(8000));
+        reader.close();
+
+        if (bytesRead <= 0) {
+            printf("XBad memory buffer %d, %d.", startAddress, bytesRead);
+        }
+        else {
+            if (!sendLoadBufferToMachine(startAddress, bytesRead)) {
+                printf("XFailed to send buffer to machine.");    
+            }
+        }
+
+        return;
+    }
+
+    printf("XBad params to memdownload.");
+    return;
+
+
+}
+
 
 static char commandBuffer[512];
 static size_t commandLength = 0;
@@ -607,7 +659,22 @@ void pollUsbCommandHandler() {
             }
             else if (strcmp(commandBuffer, "snapupload") == 0) {
                 handleSnapUpload();
-            }            
+            }
+            else if (strcmp(commandBuffer, "memdownload") == 0) {
+                if (args != 3) {
+                    printf("Xmemdownload bad args\n");
+                }
+                else {
+                    const char* n1 = commandBuffer + strlen(commandBuffer) + 1;
+                    const char* n2 = n1 + strlen(n1) + 1;
+                    handleMemDownload(n1, n2);
+                }
+
+            }
+            else if (strcmp(commandBuffer, "memupload") == 0) {
+                const char* n1 = commandBuffer + strlen(commandBuffer) + 1;
+                handleMemUpload(n1);
+            }              
             else if (commandBuffer[0] != '\0') {
                 printf("XUnknown command: %s\n", commandBuffer);
             }

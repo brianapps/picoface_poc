@@ -132,26 +132,14 @@ void __time_critical_func(do_my_pio)() {
     pio_sm_init(pio, SM_OUTDATA, offset, &sm_config);
     pio_sm_set_enabled(pio, SM_OUTDATA, true);
 
-
-    
-
     piohandler();
 }
 
 #define SNA_SIZE 49179
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_SIZE))
+#define SNA_HEADER_SIZE 27
 
 static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
-
-#define ACTION_BEGIN_SNA_READ 0x01
-#define ACTION_SNA_READ_NEXT 0x02
-#define ACTION_SNA_BEGIN_WRITE 0x03
-#define ACTION_SNA_NEXT_WRITE 0x04
-#define ACTION_SNA_LIST 0x05
-#define ACTION_SNA_SAVE 0x06
-#define ACTION_ROM_LIST 0x07
-#define ACTION_ROM_CHANGE 0x08
-
 
 
 const char* current_sna_data = NULL;
@@ -380,6 +368,39 @@ void nmi_action_change_rom() {
     }
 }
 
+void nmi_action_read_data_from_pico() {
+    // WORD param1 pointer to destination location (in spectrum rom)
+    // WORD param2 offset address to read from must be >= 16384
+    // WORD param3 length of source data
+
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint32_t destoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint32_t srcoffset = (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint32_t length = (nmi_rom_data[7] << 8) |  nmi_rom_data[6];
+
+    if (srcoffset >= 16384) {
+        memcpy(nmi_rom_data + destoffset, 
+            sna_load_buffer + SNA_HEADER_SIZE + srcoffset - 16384, length);
+    }
+}
+
+
+void nmi_action_write_data_to_pico() {
+    // WORD param1 pointer to source location of data (in spectrum rom)
+    // WORD param2 offset address to write data must be >= 16384
+    // WORD param3 length of source data
+
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint32_t srcoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint32_t destoffset = (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint32_t length = (nmi_rom_data[7] << 8) |  nmi_rom_data[6];
+
+    if (destoffset >= 16384) {
+        memcpy(sna_load_buffer + SNA_HEADER_SIZE + destoffset - 16384,
+            nmi_rom_data + srcoffset , length);
+    }
+}
+
 
 void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
@@ -431,7 +452,12 @@ void process_nmi_request() {
     } else if (action == ACTION_ROM_CHANGE) {
         nmi_action_change_rom();
         return;
+    } else if (action == ACTION_READ_DATA_FROM_PICO) {
+        nmi_action_read_data_from_pico();
+    } else if (action == ACTION_WRITE_DATA_TO_PICO) {
+        nmi_action_write_data_to_pico();
     }
+
 
     nmi_rom_data[0] = 0;
 }
@@ -486,12 +512,43 @@ uint8_t* beginSendSnapDataToMachine() {
     return reinterpret_cast<uint8_t*>(sna_load_buffer);
 }
 
+uint8_t* getRamLoadBuffer() {
+    return reinterpret_cast<uint8_t*>(sna_load_buffer + SNA_HEADER_SIZE);
+}
+
 bool endSendSnapDataToMachine() {
     bool loggingWasEnabled = enable_logging;
     enable_logging = false;
     bool ok = sendNmiAndWaitForCompletion(STARTUP_ACTION_LOAD_SNAP, 0, 0);
     enable_logging = loggingWasEnabled;
     return ok;
+}
+
+
+bool sendLoadBufferToMachine(uint32_t startAddress, uint32_t length) {
+    if (startAddress >= 16384 && startAddress + length < 65536) {
+        // PARAM1 is destination location
+        // PARAM2 is total length
+        bool loggingWasEnabled = enable_logging;
+        enable_logging = false;
+        bool ok = sendNmiAndWaitForCompletion(STARTUP_ACTION_LOAD_MEMORY, startAddress, length);
+        enable_logging = loggingWasEnabled;
+        return ok;
+    }
+    return false;
+}
+
+bool readMachineMemToLoadBuffer(uint32_t startAddress, uint32_t length) {
+    if (startAddress >= 16384 && startAddress + length < 65536) {
+        // PARAM1 is source location
+        // PARAM2 is total length
+        bool loggingWasEnabled = enable_logging;
+        enable_logging = false;
+        bool ok = sendNmiAndWaitForCompletion(STARTUP_ACTION_SAVE_MEMORY, startAddress, length);
+        enable_logging = loggingWasEnabled;
+        return ok;
+    }
+    return false;
 }
 
 void init_file_system() {
@@ -514,6 +571,10 @@ bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
     else {
         nmi_rom_data[0] = 0;
         nmi_rom_data[STARTUP_COMMAND_OFFSET] = command;
+        nmi_rom_data[STARTUP_PARAM1_OFFSET] = param1 & 0xFF;
+        nmi_rom_data[STARTUP_PARAM1_OFFSET + 1] = (param1 >> 8) & 0xFF;
+        nmi_rom_data[STARTUP_PARAM2_OFFSET] = param2 & 0xFF;
+        nmi_rom_data[STARTUP_PARAM2_OFFSET + 1] = (param2 >> 8) & 0xFF;
         rom_state.flags |= 2;
         gpio_put(PIN_NMI, false);
         sleep_ms(3);

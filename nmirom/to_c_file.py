@@ -53,6 +53,12 @@ with open("../picorom/nmi.h", "w") as fp:
     fp.write("#endif\n")
 
 
+    for k, v in symbols.items():
+        if k.startswith("ACTION_"):
+            fp.write(f"#define {k} {v}\n")
+
+
+
     fp.write(f"#define EXITNMI 0x{exitnmi:x}\n")
     fp.write(f"#define STARTUP_COMMAND_OFFSET 0x{startup_command:x}\n")
     fp.write(f"#define STARTUP_PARAM1_OFFSET 0x{startup_param1:x}\n")
