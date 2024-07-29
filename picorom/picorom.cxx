@@ -139,12 +139,12 @@ void __time_critical_func(do_my_pio)() {
 
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_FILE_SIZE))
 
-static char sna_load_buffer[SNA_LOAD_SIZE + 1024];
+static char snap_load_buffer[SNA_LOAD_SIZE + 1024];
 
 
-const char* current_sna_data = NULL;
-uint32_t current_sna_offset =  0;
-uint32_t current_sna_size = 0;
+const char* current_snap_data = NULL;
+uint32_t current_snap_offset =  0;
+uint32_t current_snap_size = 0;
 
 
 
@@ -162,17 +162,17 @@ void load_snapshot_file(const char* fileAndExt) {
 
     if (strcasecmp(ext, "snaz") == 0) {
         isCompressed = true;
-        current_sna_size = SNA_FILE_SIZE;
+        current_snap_size = SNA_FILE_SIZE;
     }
     else if (strcasecmp(ext, "z80z") == 0) {
         isCompressed = true;
-        current_sna_size = Z80_FILE_SIZE;
+        current_snap_size = Z80_FILE_SIZE;
     }
     else if (strcasecmp(ext, "z80") == 0) {
-        current_sna_size = Z80_FILE_SIZE;
+        current_snap_size = Z80_FILE_SIZE;
     }
     else if (strcasecmp(ext, "sna") == 0) {
-        current_sna_size = SNA_FILE_SIZE;
+        current_snap_size = SNA_FILE_SIZE;
     }
 
     strcpy(filename + filePartLen + 1, ext);
@@ -181,16 +181,16 @@ void load_snapshot_file(const char* fileAndExt) {
     size_t file_size = pico_size(file);
 
     if (isCompressed) {
-        pico_read(file, sna_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
-        int res = LZ4_decompress_safe_partial(sna_load_buffer + SNA_LOAD_SIZE - file_size, sna_load_buffer, file_size, current_sna_size, current_sna_size);
+        pico_read(file, snap_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
+        int res = LZ4_decompress_safe_partial(snap_load_buffer + SNA_LOAD_SIZE - file_size, snap_load_buffer, file_size, current_snap_size, current_snap_size);
         LOG("Decompress result: %d, original size: %d\n", res, file_size);
     }
     else {
-        pico_read(file, sna_load_buffer, current_sna_size);
+        pico_read(file, snap_load_buffer, current_snap_size);
     }
 
     pico_close(file);
-    current_sna_data = sna_load_buffer;
+    current_snap_data = snap_load_buffer;
 }
 
 bool stringendswith(const char* str, const char* suffix) {
@@ -202,17 +202,10 @@ bool stringendswith(const char* str, const char* suffix) {
     return strcasecmp(str + len - suffixlen, suffix) == 0;
 }
 
-inline bool is_snapshot_file(const char* filename, size_t filename_len) {
-    return (filename_len > 5 && strcasecmp(filename + filename_len - 5, ".snaz") == 0) ||
-        (filename_len > 4 && strcasecmp(filename + filename_len - 4, ".sna") == 0)  ||
-        (filename_len > 4 && strcasecmp(filename + filename_len - 4, ".z80") == 0) ||
-        (filename_len > 5 && strcasecmp(filename + filename_len - 5, ".z80z") == 0);
-}
-
 
 inline bool is_snapshot_ext(const char* extension) {
-    return strcasecmp(extension, ".sna") == 0 || strcasecmp(extension, ".snaz") == 0 ||
-        strcasecmp(extension, ".z80") == 0 || strcasecmp(extension, ".z80z");
+    return (strcasecmp(extension, "sna") == 0) || (strcasecmp(extension, "snaz") == 0) ||
+        (strcasecmp(extension, "z80") == 0) || (strcasecmp(extension, "z80z") == 0);
 
 }
 
@@ -252,7 +245,7 @@ void nmi_action_sna_save() {
     bool ok = file >= 0;
 
     if (ok) {
-        ok = pico_write(file, sna_load_buffer, SNA_FILE_SIZE) >= 0;
+        ok = pico_write(file, snap_load_buffer, SNA_FILE_SIZE) >= 0;
         pico_close(file);
     }
 
@@ -377,13 +370,13 @@ void nmi_action_change_rom() {
         size_t file_size = pico_size(file);
 
         if (isCompressed) {
-            pico_read(file, sna_load_buffer, file_size);
-            int res = LZ4_decompress_safe_partial(sna_load_buffer, 
+            pico_read(file, snap_load_buffer, file_size);
+            int res = LZ4_decompress_safe_partial(snap_load_buffer, 
                 reinterpret_cast<char*>(rom_data), file_size, 16384, 16384);
             LOG("Decompress result: %d, original size: %d\n", res, file_size);
         }
         else {
-            pico_read(file, sna_load_buffer, SNA_FILE_SIZE);
+            pico_read(file, snap_load_buffer, SNA_FILE_SIZE);
         }
 
         pico_close(file);
@@ -405,7 +398,7 @@ void nmi_action_read_data_from_pico() {
 
     if (srcoffset >= 16384) {
         memcpy(nmi_rom_data + destoffset, 
-            sna_load_buffer + SNA_HEADER_SIZE + srcoffset - 16384, length);
+            snap_load_buffer + SNA_HEADER_SIZE + srcoffset - 16384, length);
     }
 }
 
@@ -421,7 +414,7 @@ void nmi_action_write_data_to_pico() {
     uint32_t length = (nmi_rom_data[7] << 8) |  nmi_rom_data[6];
 
     if (destoffset >= 16384) {
-        memcpy(sna_load_buffer + SNA_HEADER_SIZE + destoffset - 16384,
+        memcpy(snap_load_buffer + SNA_HEADER_SIZE + destoffset - 16384,
             nmi_rom_data + srcoffset , length);
     }
 }
@@ -431,54 +424,54 @@ void process_nmi_request() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint8_t action = nmi_rom_data[1];
     LOG("Action to process: %d\n", action);
-    if (action == ACTION_BEGIN_SNA_READ) {
+    if (action == ACTION_BEGIN_SNAP_READ) {
         uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
 
         if (nameoffset != 0) {
             LOG("Loading %s\n", nmi_rom_data + nameoffset);
             load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
-            LOG("Start snapshot, size = %d, head destination: %X\n", current_sna_size, headeroffset);
+            LOG("Start snapshot, size = %d, head destination: %X\n", current_snap_size, headeroffset);
         } else {
-            current_sna_data = sna_load_buffer;
+            current_snap_data = snap_load_buffer;
             // TODO - Fix this when command to upload snap is updated
-            current_sna_size = SNA_FILE_SIZE;
+            current_snap_size = SNA_FILE_SIZE;
 
         }
 
-        if (current_sna_size == Z80_FILE_SIZE) {
+        if (current_snap_size == Z80_FILE_SIZE) {
             printf("Sending Z80 file header\n");
             nmi_rom_data[2] = 1;
-            memcpy(nmi_rom_data + headeroffset, current_sna_data, Z80_HEADER_SIZE);
-            current_sna_offset = Z80_HEADER_SIZE;
+            memcpy(nmi_rom_data + headeroffset, current_snap_data, Z80_HEADER_SIZE);
+            current_snap_offset = Z80_HEADER_SIZE;
         }
         else {
             printf("Sending SNA file header\n");
             nmi_rom_data[2] = 0;
-            memcpy(nmi_rom_data + headeroffset, current_sna_data, 27);
-            current_sna_offset = 27;
+            memcpy(nmi_rom_data + headeroffset, current_snap_data, SNA_HEADER_SIZE);
+            current_snap_offset = SNA_HEADER_SIZE;
         }
     }
-    else if (action == ACTION_SNA_READ_NEXT) {
+    else if (action == ACTION_SNAP_READ_NEXT) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
-        uint32_t tocopy = MIN(count, current_sna_size - current_sna_offset);
+        uint32_t tocopy = MIN(count, current_snap_size - current_snap_offset);
         LOG("Continue SNA, destination: %X, count: %X\n", offset, tocopy);
-        memcpy(nmi_rom_data + offset, current_sna_data + current_sna_offset, tocopy);
-        current_sna_offset += tocopy;
+        memcpy(nmi_rom_data + offset, current_snap_data + current_snap_offset, tocopy);
+        current_snap_offset += tocopy;
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
-    }  else if (action == ACTION_SNA_BEGIN_WRITE) {
+    }  else if (action == ACTION_SNAP_BEGIN_WRITE) {
         uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         LOG("Start SNA save, head destination: %X\n", headeroffset);
-        memcpy(sna_load_buffer, nmi_rom_data + headeroffset, 27);
-        current_sna_write_offset = 27;
-    }  else if (action == ACTION_SNA_NEXT_WRITE) {
+        memcpy(snap_load_buffer, nmi_rom_data + headeroffset, SNA_HEADER_SIZE);
+        current_sna_write_offset = SNA_HEADER_SIZE;
+    }  else if (action == ACTION_SNAP_NEXT_WRITE) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
         uint32_t tocopy = MIN(count, SNA_FILE_SIZE - current_sna_write_offset);
         LOG("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
-        memcpy(sna_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
+        memcpy(snap_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
        current_sna_write_offset += tocopy;
     } else if (action == ACTION_SNA_LIST) {
         nmi_action_list_sna();
@@ -538,7 +531,7 @@ const uint8_t* getSnapshotData(size_t& snapshotLength) {
             }            
         }
         snapshotLength = SNA_FILE_SIZE;
-        data = reinterpret_cast<const uint8_t*>(sna_load_buffer);
+        data = reinterpret_cast<const uint8_t*>(snap_load_buffer);
     }
 
     enable_logging = loggingWasEnabled;
@@ -547,11 +540,11 @@ const uint8_t* getSnapshotData(size_t& snapshotLength) {
 
 
 uint8_t* beginSendSnapDataToMachine() {
-    return reinterpret_cast<uint8_t*>(sna_load_buffer);
+    return reinterpret_cast<uint8_t*>(snap_load_buffer);
 }
 
 uint8_t* getRamLoadBuffer() {
-    return reinterpret_cast<uint8_t*>(sna_load_buffer + SNA_HEADER_SIZE);
+    return reinterpret_cast<uint8_t*>(snap_load_buffer + SNA_HEADER_SIZE);
 }
 
 bool endSendSnapDataToMachine() {
