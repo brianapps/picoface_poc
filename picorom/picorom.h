@@ -1,7 +1,11 @@
 #ifndef INCLUDED_PICOROM_H
 #define INCLUDED_PICOROM_H
 
-#define SNA_SIZE 49179
+#define SNA_HEADER_SIZE 27
+#define Z80_HEADER_SIZE 30
+
+#define SNA_FILE_SIZE 49179
+#define Z80_FILE_SIZE (48 * 1024 + Z80_HEADER_SIZE)
 
 
 // Attempt to obtain snapshot from the running spectrum

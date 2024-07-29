@@ -537,13 +537,13 @@ void handleSnapDownload() {
 
 void handleSnapUpload() {
     CommStreamReader reader;
-    if (reader.begin(SNA_SIZE)) {
+    if (reader.begin(SNA_FILE_SIZE)) {
         uint8_t* buffer = beginSendSnapDataToMachine();
-        int read = reader.read(reinterpret_cast<char*>(buffer), SNA_SIZE, make_timeout_time_ms(8000));
-        if (read != SNA_SIZE || !reader.atEndOfFile()) {
+        int read = reader.read(reinterpret_cast<char*>(buffer), SNA_FILE_SIZE, make_timeout_time_ms(8000));
+        if (read != SNA_FILE_SIZE || !reader.atEndOfFile()) {
             reader.close();
             printf("XError, SNA size is wrong got %d and%s more available, expected %d.", 
-                read, reader.atEndOfFile() ? " no" : "", SNA_SIZE);
+                read, reader.atEndOfFile() ? " no" : "", SNA_FILE_SIZE);
         }
         else if (endSendSnapDataToMachine()) {
             putchar(ACK);

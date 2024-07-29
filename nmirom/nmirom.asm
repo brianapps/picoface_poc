@@ -19,7 +19,9 @@ BORDCR: equ  0x5C48
 ACTION_BEGIN_SNA_READ: equ 0x01
 // param1 = name pointer - -- if name pointer is zero load from snapshot currently in
 // the pico memory.
-// param2 = sna header offset
+// param2 = sna or z80 header offset
+// on success
+// byte param1 snapshot type -- 0 for sna, 1 for z80
 
 
 ACTION_SNA_READ_NEXT equ 0x02
@@ -247,9 +249,6 @@ nmientry:
     ld sp, (sna_on_entry + SNAHEADER.SP)
 ei_exitnmi:
     ei
-self_modify_exit:
-    nop
-    nop
 exitnmi:
     ret
 
@@ -1430,6 +1429,35 @@ IM   BYTE
 BORD BYTE
      ENDS
 
+
+; -------------------------------------------
+
+     STRUCT Z80HEADER
+A    BYTE
+F    BYTE
+BC   WORD
+HL   WORD
+PC   WORD
+SP   WORD
+I    BYTE
+R    BYTE
+FLAGS1 BYTE
+DE   WORD
+BCx WORD
+DEx WORD
+HLx WORD
+Ax  BYTE
+Fx  BYTE
+
+IY  WORD
+IX  WORD
+
+EI BYTE
+IFF2 BYTE
+FLAGS2 BYTE
+    ENDS
+
+
 sendsnapshottopico:
     push ix
     ld ix, 0
@@ -1478,7 +1506,6 @@ sendsnapshottopico:
 
 // enter with hl pointing to the snapshot name string
 loadsnapshot:
-    push ix
     ld ix, 0
     ld (ix + 2), hl
     ld hl, sna_header
@@ -1488,6 +1515,12 @@ loadsnapshot:
 1:  ld a, (ix)
     cp 255
     jr z, 1B
+
+    ld a, (ix + 2)
+    cp 1
+    jp z, load_z80_snapshot
+
+
 
     ld a, (sna_header + SNAHEADER.BORD)
     and 7
@@ -1512,7 +1545,6 @@ loadsnapshot:
 
     pop bc
     djnz .transfer
-    pop ix
 
 
     ld a, (sna_header + SNAHEADER.I)
@@ -1558,6 +1590,96 @@ loadsnapshot:
     ld sp, (sna_header + SNAHEADER.SP)
     di
     jp exitnmi
+
+
+load_z80_snapshot:
+
+    ld a, (sna_header + Z80HEADER.FLAGS1)
+    srl a
+    and 7
+    out (0xfe), a    
+
+    ld b, 8
+    ld de, 16384
+
+.transfer
+    push bc
+    ld hl, screen_save
+    ld bc, 1024 * 6
+    ld (ix + 2), hl
+    ld (ix + 4), bc
+    ld (ix + 1), ACTION_SNA_READ_NEXT
+    ld (ix + 0), 255
+1:  ld a, (ix)
+    cp 255
+    jr z, 1B
+
+    ldir
+
+    pop bc
+    djnz .transfer
+
+    // Prepare some self modifying code to jump to address where the z80
+    // snapshot starts.
+    // When the instruction has been fully read the pico knows
+    // so disable the nmi rom.
+    ld a, 0xC3 // JMP instruction
+    ld (exitnmi - 2), a
+    ld hl, (sna_header + Z80HEADER.PC)
+    ld (exitnmi - 1), hl
+
+    ld a, (sna_header + Z80HEADER.EI)
+    cp 0
+    jr z, .di
+    ld a, 0xFB // opcode EI
+    jr 1F
+.di
+    ld a, 0xF3 // opcode DI
+1:
+    ld (exitnmi - 3), a
+
+
+    ld a, (sna_header + Z80HEADER.I)
+    ld i, a
+    ld a, (sna_header + Z80HEADER.FLAGS2)
+    and 0x3
+    cp 2
+    jr z, .im2mode
+    im 1
+    jr 1F
+.im2mode
+    im 2
+1:
+    exx
+    ex af, af'
+    ld a, (sna_header + Z80HEADER.Ax)
+    ld h, a
+    ld a, (sna_header + Z80HEADER.Fx)
+    ld l, a
+    push hl
+    pop af
+    ld hl, (sna_header + Z80HEADER.HLx)
+    ld de, (sna_header + Z80HEADER.DEx)
+    ld bc, (sna_header + Z80HEADER.BCx)
+    exx
+    ex af, af'
+    ld a, (sna_header + Z80HEADER.A)
+    ld h, a
+    ld a, (sna_header + Z80HEADER.F)
+    ld l, a
+    push hl
+    ld hl, (sna_header + Z80HEADER.HL)
+    ld de, (sna_header + Z80HEADER.DE)
+    ld bc, (sna_header + Z80HEADER.BC)
+    ld iy, (sna_header + Z80HEADER.IY)
+    ld ix, (sna_header + Z80HEADER.IX)
+    pop af
+    ld sp, (sna_header + Z80HEADER.SP)
+    jp exitnmi - 3
+
+
+
+
 
    
 getimmode:
@@ -2021,7 +2143,7 @@ stack_top:
 
 screen_save: BLOCK 6912
 
-sna_header: BLOCK SNAHEADER
+sna_header: BLOCK 30
 
 spare_size: equ 0x4000 - $
 
