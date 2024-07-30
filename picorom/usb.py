@@ -4,6 +4,8 @@ import serial
 import struct
 import argparse
 import lz4.block
+import time
+import convertZ80
 
 ACK = b'\x06'
 
@@ -56,6 +58,12 @@ def sendData(port, cmd, bytesToSend):
             print("Expecting ACK from EOT but didn't get it")
             print(ser.read_all())
             return
+        
+        time.sleep(0.1)
+        for i in range(10):
+            b = ser.read_all()
+            if len(b) > 0:
+                print(b)
 
 
 
@@ -118,32 +126,39 @@ def escape_param(param : str) -> str:
 def join_params(params: list[str]):
     return ' '.join(x.replace(" ", "\\ ") for x in params)
 
-parser = argparse.ArgumentParser(
-    description = 'send commands to pico board over serial usb'
-)
 
-parser.add_argument('-p', '--port', default='/dev/ttyACM0')
-parser.add_argument('-i', '--input', help='input file')
-parser.add_argument('-z', '--compress', help='compress the input', action='store_const', const=True)
-parser.add_argument('-o', '--output', help='output file')
-parser.add_argument('cmdparams', nargs='+')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description = 'send commands to pico board over serial usb'
+    )
 
-args = parser.parse_args()
+    parser.add_argument('-p', '--port', default='/dev/ttyACM0')
+    parser.add_argument('-i', '--input', help='input file')
+    parser.add_argument('-z', '--compress', help='compress the input', action='store_const', const=True)
+    parser.add_argument('-o', '--output', help='output file')
+    parser.add_argument('cmdparams', nargs='+')
 
+    args = parser.parse_args()
 
-
-if args.input is None:
-    data = receiveData(args.port, join_params(args.cmdparams))
-    if args.output is None:
-        print(data)
-        print(data.decode('ascii',errors='ignore'))
+    if args.input is None:
+        data = receiveData(args.port, join_params(args.cmdparams))
+        if args.output is None:
+            print(data)
+            print(data.decode('ascii',errors='ignore'))
+        else:
+            with open(args.output, "wb") as fp:
+                fp.write(data)
     else:
-        with open(args.output, "wb") as fp:
-            fp.write(data)
-else:
-    with open(args.input, 'rb') as fp:
-        data = fp.read()
-    if args.compress:
-        data = lz4.block.compress(data, mode='high_compression', store_size=False, compression=12)
-    sendData(args.port, join_params(args.cmdparams), data)
+        if args.input.lower().endswith(".z80"):
+            print("convert z80 to v1 uncompressed")
+            snapshot = convertZ80.Z80Snapshot()
+            snapshot.process_file(args.input)
+            data = snapshot.to_bytes()
+        else:
+            with open(args.input, 'rb') as fp:
+                data = fp.read()
+        if args.compress:
+            data = lz4.block.compress(data, mode='high_compression', store_size=False, compression=12)
+        sendData(args.port, join_params(args.cmdparams), data)
+
 

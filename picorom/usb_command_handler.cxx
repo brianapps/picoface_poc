@@ -333,7 +333,6 @@ void CommStreamReader::nextPacket(absolute_time_t expiry) {
 }
 
 
-
 int CommStreamReader::read(char* buffer, int len, absolute_time_t expiry) {
     int readsofar = 0;
 
@@ -351,6 +350,9 @@ int CommStreamReader::read(char* buffer, int len, absolute_time_t expiry) {
                 readsofar += read;
                 packetRemaining -= read;
                 totalRead += read;
+                if (packetRemaining == 0) {
+                    nextPacket(expiry);
+                }
             }
             else {
                 isOK = false;
@@ -395,10 +397,6 @@ int escapeCommandLine(char* command) {
         *dest++ = '\0';
         command++;
     }
-
-
-
-
 }
 
 
@@ -447,13 +445,8 @@ void handleListFiles(const char* name) {
     }
 
     pico_fsstat_t stats;
-
     pico_fsstat(&stats);
-
     writer.printf("FSInfo count=%d, size=%d, used=%d\n", stats.block_count, stats.block_size, stats.blocks_used);
-
-
-
     writer.end();
 }
 
@@ -516,9 +509,7 @@ void handleMkDir(const char* filename) {
 
 
 void handleSnapDownload() {
-
     size_t snapShotlength;
-
     const uint8_t* data = getSnapshotData(snapShotlength);
 
     if (data == nullptr) {
@@ -530,25 +521,21 @@ void handleSnapDownload() {
         writer.write(reinterpret_cast<const char*>(data), snapShotlength, make_timeout_time_ms(8000));
         writer.end();
     }
-
-
-
 }
 
 void handleSnapUpload() {
     CommStreamReader reader;
-    if (reader.begin(SNA_FILE_SIZE)) {
+    if (reader.begin()) {
         uint8_t* buffer = beginSendSnapDataToMachine();
-        int read = reader.read(reinterpret_cast<char*>(buffer), SNA_FILE_SIZE, make_timeout_time_ms(8000));
-        if (read != SNA_FILE_SIZE || !reader.atEndOfFile()) {
+        int read = reader.read(reinterpret_cast<char*>(buffer), Z80_FILE_SIZE, make_timeout_time_ms(8000));
+        if (!reader.atEndOfFile()) {
             reader.close();
-            printf("XError, SNA size is wrong got %d and%s more available, expected %d.", 
-                read, reader.atEndOfFile() ? " no" : "", SNA_FILE_SIZE);
+            printf("XError, snapshot data size is wrong got %d more available.", read);
         }
-        else if (endSendSnapDataToMachine()) {
-            putchar(ACK);
+        else if (read != SNA_FILE_SIZE && read != Z80_FILE_SIZE) {
+            printf("XError, snapshot data size is not supported  %d.", read);
         }
-        else {
+        else if (!endSendSnapDataToMachine(read)) {
             printf("XFailed to send snapshot to machine.");
         }
     }

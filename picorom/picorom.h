@@ -12,7 +12,7 @@
 const uint8_t* getSnapshotData(size_t& snapshotLength);
 
 uint8_t* beginSendSnapDataToMachine();
-bool endSendSnapDataToMachine();
+bool endSendSnapDataToMachine(uint32_t snapshotLength);
 
 // Return a pointer to 48K of memory used a so load/save
 // buffer between the pico and the real device. This pointer

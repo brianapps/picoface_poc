@@ -434,9 +434,6 @@ void process_nmi_request() {
             LOG("Start snapshot, size = %d, head destination: %X\n", current_snap_size, headeroffset);
         } else {
             current_snap_data = snap_load_buffer;
-            // TODO - Fix this when command to upload snap is updated
-            current_snap_size = SNA_FILE_SIZE;
-
         }
 
         if (current_snap_size == Z80_FILE_SIZE) {
@@ -461,19 +458,19 @@ void process_nmi_request() {
         current_snap_offset += tocopy;
         nmi_rom_data[4] = tocopy & 0xFF;
         nmi_rom_data[5] = (tocopy >> 8) & 0xFF;
-    }  else if (action == ACTION_SNAP_BEGIN_WRITE) {
+    }  else if (action == ACTION_SNA_BEGIN_WRITE) {
         uint16_t headeroffset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         LOG("Start SNA save, head destination: %X\n", headeroffset);
         memcpy(snap_load_buffer, nmi_rom_data + headeroffset, SNA_HEADER_SIZE);
         current_sna_write_offset = SNA_HEADER_SIZE;
-    }  else if (action == ACTION_SNAP_NEXT_WRITE) {
+    }  else if (action == ACTION_SNA_NEXT_WRITE) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
         uint16_t count =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
         uint32_t tocopy = MIN(count, SNA_FILE_SIZE - current_sna_write_offset);
         LOG("Continue SNA save, offset: %X, length = %X; tocopy = %X\n", offset, count, tocopy);
         memcpy(snap_load_buffer + current_sna_write_offset, nmi_rom_data + offset, tocopy);
        current_sna_write_offset += tocopy;
-    } else if (action == ACTION_SNA_LIST) {
+    } else if (action == ACTION_SNAP_LIST) {
         nmi_action_list_sna();
     } else if (action == ACTION_SNA_SAVE) {
         nmi_action_sna_save();
@@ -547,9 +544,11 @@ uint8_t* getRamLoadBuffer() {
     return reinterpret_cast<uint8_t*>(snap_load_buffer + SNA_HEADER_SIZE);
 }
 
-bool endSendSnapDataToMachine() {
+
+bool endSendSnapDataToMachine(uint32_t snapshotSize) {
     bool loggingWasEnabled = enable_logging;
     enable_logging = false;
+    current_snap_size = snapshotSize;
     bool ok = sendNmiAndWaitForCompletion(STARTUP_ACTION_LOAD_SNAP, 0, 0);
     enable_logging = loggingWasEnabled;
     return ok;

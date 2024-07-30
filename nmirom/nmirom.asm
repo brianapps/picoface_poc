@@ -29,15 +29,15 @@ ACTION_SNAP_READ_NEXT equ 0x02
 // param2 = length to read
 // returns, bytes read in param2
 
-ACTION_SNAP_BEGIN_WRITE equ 0x03
+ACTION_SNA_BEGIN_WRITE equ 0x03
 // param1 = destination of the sna header
 
-ACTION_SNAP_NEXT_WRITE equ 0x04
+ACTION_SNA_NEXT_WRITE equ 0x04
 // param1 = source of data
 // param2 = length to write
 
 
-ACTION_SNA_LIST equ 0x05
+ACTION_SNAP_LIST equ 0x05
 // WORD param1  = start number
 // WORD param2 = destination to write results
 //  
@@ -55,7 +55,7 @@ ACTION_SNA_SAVE equ 0x06
 
 
 ACTION_ROM_LIST equ 0x07
-// as ACTION_SNA_LIST
+// as ACTION_SNAP_LIST
 // WORD param1  = start number
 // WORD param2 = destination to write results
 //  
@@ -780,7 +780,7 @@ loadscreen:
 
 .fetchlist
     ld ix, 0
-    ld (ix + 1), ACTION_SNA_LIST
+    ld (ix + 1), ACTION_SNAP_LIST
     ld (ix + 2), de
     ld (.startpos), de
     ld hl, spare_space
@@ -1465,7 +1465,7 @@ sendsnapshottopico:
     ld (sna_on_entry + SNAHEADER.IM), a
     ld hl, sna_on_entry
     ld (ix + 2), hl
-    ld (ix + 1), ACTION_SNAP_BEGIN_WRITE
+    ld (ix + 1), ACTION_SNA_BEGIN_WRITE
     ld (ix + 0), 255
 1:  ld a, (ix)
     cp 255
@@ -1476,7 +1476,7 @@ sendsnapshottopico:
     ld bc, 6912
     ld (ix + 2), de
     ld (ix + 4), bc
-    ld (ix + 1), ACTION_SNAP_NEXT_WRITE
+    ld (ix + 1), ACTION_SNA_NEXT_WRITE
     ld (ix + 0), 255
 1:  ld a, (ix)
     cp 255
@@ -1491,7 +1491,7 @@ sendsnapshottopico:
     ld bc, 3520
     ld (ix + 2), de
     ld (ix + 4), bc
-    ld (ix + 1), ACTION_SNAP_NEXT_WRITE
+    ld (ix + 1), ACTION_SNA_NEXT_WRITE
     ldir
     ld (ix + 0), 255
 1:  ld a, (ix)
