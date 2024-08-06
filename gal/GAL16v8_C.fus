@@ -70,7 +70,7 @@ Pin 13 = /IOREQ       XOR = 0   AC1 = 1
  54  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  55  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 12 = /JOYE        XOR = 0   AC1 = 1
+Pin 12 = /JOYE        XOR = 1   AC1 = 1
  56  ---- ---- ---- ---- ---- ---- ---- ----
  57  ---- ---- ---- ---- ---- x--- ---- ----
  58  ---- ---- ---- ---- ---- ---- x--- ----

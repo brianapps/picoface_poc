@@ -24,7 +24,7 @@ if(WIN32)
 endif()
 # ====================================================================================
 
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+set(PICO_BOARD pico CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -73,7 +73,7 @@ target_compile_definitions(picorom PRIVATE
 target_link_libraries(picorom 
         hardware_pio
         pico_multicore
-        pico_cyw43_arch_lwip_poll
+        #pico_cyw43_arch_lwip_poll
         )
 
 target_link_libraries(picorom littlefs-lib)

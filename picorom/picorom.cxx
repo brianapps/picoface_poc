@@ -4,7 +4,9 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "hardware/pio.h"
+#ifdef ENABLE_WIFI
 #include "pico/cyw43_arch.h"
+#endif
 #include "hardware/structs/bus_ctrl.h"
 #include "usb_command_handler.h"
 
@@ -23,6 +25,7 @@
 extern const uint8_t FGH_ROM[];
 extern const uint32_t FGH_ROM_SIZE;
 
+/*
 // multiplexed address pins
 const uint8_t PIN_MA0 = 2;
 const uint8_t PIN_MA1 = 3;
@@ -55,8 +58,25 @@ const uint8_t PIN_XE = 22;
 const uint8_t PIN_USER_SWITCH = 26;
 const uint8_t PIN_NMI = 27;
 
+*/
+
+
+// set high to disable rom.
+// When low /CSROM is floating but when high this pulls /CSROM to GND and
+// therefore gives the pico control of the data lines when the Z80 is 
+// accessing memory in the lower 16KB.
+const uint8_t PIN_CSROM = 26; 
+const uint8_t PIN_PICOREQ = 22;
+const uint8_t PIN_XE = 20;
+
+const uint8_t PIN_USER_SWITCH = 27;
+const uint8_t PIN_NMI = 21;
+
 const uint MY_SM = 0;
 const uint SM_OUTDATA = 1;
+
+const uint8_t PIN_D0 = 12;
+const uint8_t PIN_A0xA8 = 4;
 
 
 
@@ -117,7 +137,7 @@ void __time_critical_func(do_my_pio)() {
 
     uint offset = pio_add_program(pio, &fetchaddr_program);
     pio_sm_config sm_config = fetchaddr_program_get_default_config(offset);
-    sm_config_set_in_pins(&sm_config, 2);
+    sm_config_set_in_pins(&sm_config, PIN_A0xA8);
     sm_config_set_in_shift(&sm_config, true, true, 32);
     sm_config_set_sideset_pins(&sm_config, PIN_XE);
 
@@ -678,6 +698,8 @@ int main() {
 
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_PROC1_BITS;
 
+    //set_sys_clock_khz(125 * 1000, true);
+
     memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
     rom_state.flags = 0;
 
@@ -686,10 +708,6 @@ int main() {
     gpio_init(PIN_USER_SWITCH);
     gpio_set_dir(PIN_USER_SWITCH, false);
     gpio_pull_up(PIN_USER_SWITCH);
-
-    gpio_init(PIN_RESET);
-    gpio_put(PIN_RESET, false);
-    gpio_set_dir(PIN_RESET, true);    
 
     gpio_init(PIN_NMI);
     gpio_put(PIN_NMI, true);

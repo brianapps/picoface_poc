@@ -7,16 +7,17 @@
 ; SET pin 0 should be mapped to your LED GPIO
 
 
-.define PIN_CSROM 20
-.define PIN_PICOREQ 21
-.define PIN_XE 22
+
+.define PIN_CSROM 26
+.define PIN_PICOREQ 22
+.define PIN_XE 20
 
 .program fetchaddr
 .side_set 1
 .wrap_target
     WAIT 0 GPIO PIN_PICOREQ SIDE 1 
-    IN PINS, 7 SIDE 0 [5]
-    IN PINS, 25 SIDE 0
+    IN PINS, 8 SIDE 0 [5]
+    IN PINS, 24 SIDE 0
     ;PUSH SIDE 1
     WAIT 1 GPIO PIN_PICOREQ SIDE 1 
 .wrap

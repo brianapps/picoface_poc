@@ -17,15 +17,17 @@ class MainWindowWidget(QtWidgets.QWidget):
 
         # Image viewing region
         self.lbl = QtWidgets.QLabel(self)
+        self.lbl.setText("")
 
         # A horizontal layout to include the button on the left
-        layout_button = QtWidgets.QHBoxLayout()
-        layout_button.addWidget(self.load_button)
-        layout_button.addStretch()
+        # layout_button = QtWidgets.QHBoxLayout()
+        # layout_button.addWidget(self.load_button)
+        # layout_button.addStretch()
 
         # A Vertical layout to include the button layout and then the image
         layout = QtWidgets.QVBoxLayout()
-        layout.addLayout(layout_button)
+        layout.addWidget(self.load_button)
+        layout.addWidget(self.lbl)
 
         self.setLayout(layout)
 
@@ -61,14 +63,16 @@ class MainWindowWidget(QtWidgets.QWidget):
                 fname = str(url.toLocalFile())
 
             self.fname = fname
+            try:
 
-            snapshot = Z80Snapshot()
-            snapshot.process_file(self.fname)
+                snapshot = Z80Snapshot()
+                snapshot.process_file(self.fname)
 
-            usb.sendData('/dev/ttyACM0', "snapupload", snapshot.to_bytes())
+                usb.sendData('/dev/ttyACM0', "snapupload", snapshot.to_bytes())
+                self.lbl.setText("Sent")
+            except Exception as ex:
+                self.lbl.setText(str(ex))
 
-            with open("conv.z80", "wb") as fp:
-                fp.write(snapshot.to_bytes())
             
             
         else:

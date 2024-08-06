@@ -3,6 +3,8 @@
 #include <stdlib.h>
 
 #include "pico/stdlib.h"
+
+#ifdef ENABLE_WIFI
 #include "pico/cyw43_arch.h"
 
 #include "lwip/pbuf.h"
@@ -545,3 +547,4 @@ bool start_http_server() {
 
 
 
+#endif
