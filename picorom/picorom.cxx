@@ -612,13 +612,13 @@ void init_file_system() {
 
 
 bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
-    uint8_t* nmi_rom_data = rom_data + 16384;
-    memcpy(nmi_rom_data, NMI_ROM, NMI_ROM_SIZE);
 
     if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
         return false;
     }
     else {
+        uint8_t* nmi_rom_data = rom_data + 16384;
+        memcpy(nmi_rom_data, NMI_ROM, NMI_ROM_SIZE);
         nmi_rom_data[0] = 0;
         nmi_rom_data[STARTUP_COMMAND_OFFSET] = command;
         nmi_rom_data[STARTUP_PARAM1_OFFSET] = param1 & 0xFF;
