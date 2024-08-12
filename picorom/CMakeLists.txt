@@ -24,7 +24,25 @@ if(WIN32)
 endif()
 # ====================================================================================
 
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+set(WIFI_ENABLE 0 CACHE BOOL "Enable wifi server, needs pico-w board.")
+
+if("${WIFI_ENABLE}")
+        message(STATUS "Wifi is enabled")
+        set(PICO_BOARD pico_w CACHE STRING "Board type" FORCE)
+        set(WIFI_SSID CACHE STRING "The WIFI SSID")
+        set(WIFI_PASSWORD CACHE STRING "The WIFI Password")
+        if (NOT WIFI_SSID)
+                message(FATAL_ERROR "WIFI SSID not supplied, use -DWIFI_SSID=<ssid>.")
+        endif()
+        if (NOT WIFI_PASSWORD)
+                message(FATAL_ERROR "WIFI PASSWORD not supplied, use -DWIFI_PASSWORD=<password>.")
+        endif()
+        set(WIFI_LIBS pico_cyw43_arch_lwip_poll)
+else()
+        message(STATUS "Wifi is disabled")
+        set(PICO_BOARD pico CACHE STRING "Board type" FORCE)
+endif()
+
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -65,7 +83,9 @@ target_include_directories(picorom PRIVATE
 )
 
 
-target_compile_definitions(picorom PRIVATE ENABLE_WIFI)
+if("${WIFI_ENABLE}")
+        target_compile_definitions(picorom PRIVATE WIFI_ENABLE)
+endif()
 
 
 target_compile_definitions(picorom PRIVATE
@@ -77,7 +97,7 @@ target_compile_definitions(picorom PRIVATE
 target_link_libraries(picorom 
         hardware_pio
         pico_multicore
-        pico_cyw43_arch_lwip_poll
+        "${WIFI_LIBS}"
         )
 
 target_link_libraries(picorom littlefs-lib)

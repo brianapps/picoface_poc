@@ -4,7 +4,7 @@
 
 #include "pico/stdlib.h"
 
-#ifdef ENABLE_WIFI
+#ifdef WIFI_ENABLE
 #include "pico/cyw43_arch.h"
 
 #include "lwip/pbuf.h"

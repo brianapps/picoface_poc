@@ -4,7 +4,7 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "hardware/pio.h"
-#ifdef ENABLE_WIFI
+#ifdef WIFI_ENABLE
 #include "pico/cyw43_arch.h"
 #endif
 #include "hardware/structs/bus_ctrl.h"
@@ -691,8 +691,6 @@ int main() {
 
 
 
-//#define ENABLE_WIFI
-
 int main() {
     stdio_init_all();
 
@@ -717,7 +715,7 @@ int main() {
     sleep_ms(200);
     init_file_system();
 
-    #ifdef ENABLE_WIFI
+    #ifdef WIFI_ENABLE
     if (cyw43_arch_init()) {
         printf("failed to initialise\n");
         return 1;
@@ -744,7 +742,7 @@ int main() {
 
 
     while (true) {
-        #ifdef ENABLE_WIFI
+        #ifdef WIFI_ENABLE
         #if PICO_CYW43_ARCH_POLL
                 // if you are using pico_cyw43_arch_poll, then you must poll periodically from your
                 // main loop (not from a timer) to check for Wi-Fi driver or lwIP work that needs to be done.
@@ -761,7 +759,7 @@ int main() {
         sleep_ms(1);
         pollUsbCommandHandler();
 
-        #ifdef ENABLE_WIFI
+        #ifdef WIFI_ENABLE
         bool linkup = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP;
         if (linkup != areConnected) {
             printf("WIFI connected: %d\n", linkup);
