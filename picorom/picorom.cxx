@@ -457,13 +457,13 @@ void process_nmi_request() {
         }
 
         if (current_snap_size == Z80_FILE_SIZE) {
-            printf("Sending Z80 file header\n");
+            LOG("Sending Z80 file header\n");
             nmi_rom_data[2] = 1;
             memcpy(nmi_rom_data + headeroffset, current_snap_data, Z80_HEADER_SIZE);
             current_snap_offset = Z80_HEADER_SIZE;
         }
         else {
-            printf("Sending SNA file header\n");
+            LOG("Sending SNA file header\n");
             nmi_rom_data[2] = 0;
             memcpy(nmi_rom_data + headeroffset, current_snap_data, SNA_HEADER_SIZE);
             current_snap_offset = SNA_HEADER_SIZE;

@@ -25,10 +25,85 @@ snapdownload
 */
 
 
-constexpr uint8_t SOH = 1;
-constexpr uint8_t EOT = 4;
-constexpr uint8_t ACK = 6;
-constexpr uint8_t NACK = 'X';
+/*
+
+Communication protocol
+
+log messages are:
+
+STX <text> ETX
+
+
+Commands are sent to pico as
+
+COMMAND_START <text> COMMAND_END
+
+
+Then a 
+
+COMMAND_RESPONSE_BEGIN
+
+followed by an optional
+COMMAND_RECEIVE_DATA  <DATA FROM CLIENT>
+
+followed by an optional
+COMMAND_SEND_DATA <DATA TO CLIENT>
+
+followed by one of
+
+COMMAND_SUCCESS
+
+COMMAND_FAILURE
+
+then optional text followed by
+
+COMMAND_RESPONSE_END
+
+
+Data transmission is as follows:
+
+
+Sender begins with a
+START_OF_DATA <length as 4 bytes LSB first>
+receiver responds with either a
+ACK to continue or NAK to stop
+
+Sender then sends a number of packets
+START_OF_PACKET <packet length as 2 bytes LSB first> <data packet as length bytes>
+receiver responds with either a
+ACK to continue or NAK to stop
+
+
+Sender then sends to indicate end of data packet
+END_OF_DATA
+The recieve responds with either a 
+ACK to indicate it has received it OK or NAK.
+
+
+
+*/
+
+
+constexpr uint8_t STX = 0x02;
+constexpr uint8_t ETX = 0x03;
+
+constexpr uint8_t COMMAND_START = 0x04;
+constexpr uint8_t COMMAND_END = 0x05;
+constexpr uint8_t COMMAND_RESPONSE_BEGIN = 0x06;
+constexpr uint8_t COMMAND_RECEIVE_DATA = 0x07;
+constexpr uint8_t COMMAND_SEND_DATA = 0x08;
+constexpr uint8_t COMMAND_SUCCESS = 0x09;
+// 0x0A -0x0F missed out because these include line feeds
+constexpr uint8_t COMMAND_FAILURE = 0x10;
+constexpr uint8_t COMMAND_RESPONSE_END = 0x11;
+
+
+
+constexpr uint8_t START_OF_DATA = 0x14;
+constexpr uint8_t START_OF_PACKET = 0x15;
+constexpr uint8_t END_OF_DATA = 0x16;
+constexpr uint8_t ACK = 0x17;
+constexpr uint8_t NAK = 0x18;
 
 
 static int usbGetChars(char* buffer, int len, absolute_time_t expiry) {
@@ -215,8 +290,8 @@ bool CommStreamWriter::begin(uint32_t totalSize) {
     this->total_size = totalSize;
     this->total_sent = 0;
     char header[6];
-    header[0] = SOH;
-    header[1] = 0;
+    header[0] = COMMAND_SEND_DATA;
+    header[1] = START_OF_DATA;
     //otal_size = (header[2] << 24) | (header[3] << 16) | (header[4] << 8) | (header[5]);
     header[2] = 0xFF & (totalSize >> 24);
     header[3] = 0xFF & (totalSize >> 16);
@@ -234,12 +309,11 @@ bool CommStreamWriter::write(const char* buffer, int len, absolute_time_t expiry
     int sentSoFar = 0;
     while (isOK && sentSoFar < len) {
         int lenToSend = MIN(65355, len - sentSoFar);
-        char header[4];
-        header[0] = SOH;
-        header[1] = 1;
-        header[2] = 0xFF & (lenToSend >> 8);
-        header[3] = 0xFF & lenToSend;
-        stdio_usb.out_chars(header, 4);
+        char header[3];
+        header[0] = START_OF_PACKET;
+        header[1] = 0xFF & (lenToSend >> 8);
+        header[2] = 0xFF & lenToSend;
+        stdio_usb.out_chars(header, 3);
         stdio_usb.out_chars(buffer + sentSoFar, lenToSend);
         sentSoFar += lenToSend;
         char c;
@@ -250,7 +324,7 @@ bool CommStreamWriter::write(const char* buffer, int len, absolute_time_t expiry
 
 bool CommStreamWriter::end() {
     if (isOK) {
-        char c = EOT;
+        char c = END_OF_DATA;
         putchar(c);
         isOK = getchars(&c, 1, make_timeout_time_ms(2000)) == 1 && c == ACK;
     }
@@ -265,25 +339,25 @@ bool CommStreamReader::begin(uint32_t bytesExpecting) {
     totalExpecting = bytesExpecting;
     totalRead = 0;
 
-    putchar(ACK);
+    putchar(COMMAND_RECEIVE_DATA);
 
     absolute_time_t packetTimeout = make_timeout_time_ms(80000);
     char header[6];
 
     packetRemaining = 0;
 
-    // Return the header which should be SOH 0 LEN*4
-    if (getchars(header, 6, packetTimeout) != 6) {
+    // Return the header which should be START_OF_DATA LEN*4
+    if (getchars(header, 5, packetTimeout) != 5) {
         isOK = false;
     }
     else {
-        isOK = header[0] == SOH && header[1] == 0;
+        isOK = header[0] == START_OF_DATA;
         if (isOK)
-            total_size = (header[2] << 24) | (header[3] << 16) | (header[4] << 8) | (header[5]);
+            total_size = (header[1] << 24) | (header[2] << 16) | (header[3] << 8) | (header[4]);
     }
 
     if (!isOK) 
-        putchar(NACK);
+        putchar(NAK);
     return isOK;
 }
 
@@ -313,20 +387,20 @@ void CommStreamReader::nextPacket(absolute_time_t expiry) {
     isOK = getchars(header, 1, expiry) == 1;
 
     if (isOK) {
-        if (header[0] == EOT) {
+        if (header[0] == END_OF_DATA) {
             atEOF = true;
             if (totalExpecting != -1 && totalExpecting != totalRead) {
-                printf("XReached end but expected %d bytes, recieved %d\n", totalExpecting, totalRead);
+                putchar(NAK);
+                printf("Reached end but expected %d bytes, recieved %d\n", totalExpecting, totalRead);
             }
             else {
                 putchar(ACK);
             }
         }
-        if (header[0] == SOH) {
-            isOK = getchars(header, 3, expiry) == 3 &&
-                header[0] == 1;
+        if (header[0] == START_OF_PACKET) {
+            isOK = getchars(header, 2, expiry) == 2;
             if (isOK) {
-                packetRemaining = (header[1] << 8) | header[2];
+                packetRemaining = (header[0] << 8) | header[1];
             }
         }
     }
@@ -356,7 +430,7 @@ int CommStreamReader::read(char* buffer, int len, absolute_time_t expiry) {
             }
             else {
                 isOK = false;
-                putchar(NACK);
+                putchar(NAK);
             }
 
         }
@@ -403,13 +477,17 @@ int escapeCommandLine(char* command) {
 void handleupload(const char* name) {
     CommStreamReader reader;
     int file = pico_open(name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
+    
     if (reader.begin()) {
         char buffer[4096];
         while (true) {
             int read = reader.read(buffer, sizeof(buffer), make_timeout_time_ms(80000));
-            if (read == 0)
+            if (read == 0) {
+                putchar(COMMAND_SUCCESS);
                 break;
+            }
             else if (read < 0) {
+                putchar(COMMAND_FAILURE);
                 printf("Error\n");
                 break;
             }
@@ -417,7 +495,6 @@ void handleupload(const char* name) {
             pico_write(file, buffer, read);
         }
     }
-
     pico_close(file);
 }
 
@@ -448,6 +525,8 @@ void handleListFiles(const char* name) {
     pico_fsstat(&stats);
     writer.printf("FSInfo count=%d, size=%d, used=%d\n", stats.block_count, stats.block_size, stats.blocks_used);
     writer.end();
+
+    putchar(COMMAND_SUCCESS);
 }
 
 
@@ -455,7 +534,8 @@ void handleDownload(const char* filename) {
     int file = pico_open(filename, LFS_O_RDONLY);
 
     if (file < 0) {
-        printf("XFailed to open file to download\n");
+        putchar(COMMAND_FAILURE);
+        printf("Failed to open file to download %s\n", filename);
         return;
     }
 
@@ -463,14 +543,25 @@ void handleDownload(const char* filename) {
     CommStreamWriter writer;
     writer.begin(pico_size(file));
 
+
+
     while (true) {
         int read = pico_read(file, buffer, sizeof(buffer));
-        if (read <= 0)
+
+        if (read == 0) {
+            writer.end();
+            putchar(COMMAND_SUCCESS);
             break;
+        }
+        else if (read < 0) {
+            writer.end();
+            putchar(COMMAND_FAILURE);
+            printf("pico_read returned %d\n", read);
+            break;
+        }
         writer.write(buffer, read, make_timeout_time_ms(2000));
     }
-
-    writer.end();
+    
     pico_close(file);
 }
 
@@ -478,10 +569,11 @@ void handleDownload(const char* filename) {
 void handleDelete(const char* filename) {
     int res = pico_remove(filename);
     if (res < 0) {
-        printf("XFailed to delete file: %s (%d)", filename, res);
+        putchar(COMMAND_FAILURE);
+        printf("Failed to delete file: %s (%d)", filename, res);
     }
     else {
-        putchar(ACK);
+        putchar(COMMAND_SUCCESS);
     }
 }
 
@@ -489,10 +581,11 @@ void handleDelete(const char* filename) {
 void handleRename(const char* from, const char* to) {
     int res = pico_rename(from, to);
     if (res < 0) {
-        printf("XFailed to rename file: %s to %s (%d)", from, to, res);
+        putchar(COMMAND_FAILURE);
+        printf("Failed to rename file: %s to %s (%d)", from, to, res);
     }
     else {
-        putchar(ACK);
+        putchar(COMMAND_SUCCESS);
     }
 }
 
@@ -500,10 +593,11 @@ void handleRename(const char* from, const char* to) {
 void handleMkDir(const char* filename) {
     int res = pico_mkdir(filename);
     if (res < 0) {
-        printf("XFailed to create directory: %s (%d)", filename, res);
+        putchar(COMMAND_FAILURE);
+        printf("Failed to create directory: %s (%d)", filename, res);
     }
     else {
-        putchar(ACK);
+        putchar(COMMAND_SUCCESS);
     }
 }
 
@@ -513,13 +607,15 @@ void handleSnapDownload() {
     const uint8_t* data = getSnapshotData(snapShotlength);
 
     if (data == nullptr) {
-        printf("XFailed to get snapshot data");
+        putchar(COMMAND_FAILURE);
+        printf("Failed to get snapshot data");
     }
     else {
         CommStreamWriter writer;
         writer.begin(snapShotlength);
         writer.write(reinterpret_cast<const char*>(data), snapShotlength, make_timeout_time_ms(8000));
         writer.end();
+        putchar(COMMAND_SUCCESS);
     }
 }
 
@@ -530,17 +626,24 @@ void handleSnapUpload() {
         int read = reader.read(reinterpret_cast<char*>(buffer), Z80_FILE_SIZE, make_timeout_time_ms(8000));
         if (!reader.atEndOfFile()) {
             reader.close();
-            printf("XError, snapshot data size is wrong got %d more available.", read);
+            putchar(COMMAND_FAILURE);
+            printf("Error, snapshot data size is wrong got %d more available.", read);
         }
         else if (read != SNA_FILE_SIZE && read != Z80_FILE_SIZE) {
-            printf("XError, snapshot data size is not supported  %d.", read);
+            putchar(COMMAND_FAILURE);
+            printf("Error, snapshot data size is not supported  %d.", read);
         }
         else if (!endSendSnapDataToMachine(read)) {
-            printf("XFailed to send snapshot to machine.");
+            putchar(COMMAND_FAILURE);
+            printf("Failed to send snapshot to machine.");
+        }
+        else {
+            putchar(COMMAND_SUCCESS);
         }
     }
     else {
-        printf("X!!!");
+        putchar(COMMAND_FAILURE);
+        printf("!!!");
     }
 }
 
@@ -550,7 +653,8 @@ void handleMemDownload(const char* start, const char* len) {
 
     if (startAddress >= 16384 && startAddress + lengthCount < 0x10000) {
         if (!readMachineMemToLoadBuffer(startAddress, lengthCount)) {
-            printf("XFailed to read machine memory.");
+            putchar(COMMAND_FAILURE);
+            printf("Failed to read machine memory.");
             return;
         }
         CommStreamWriter writer;
@@ -558,10 +662,12 @@ void handleMemDownload(const char* start, const char* len) {
         uint8_t* data = getRamLoadBuffer() + startAddress - 16384;
         writer.write(reinterpret_cast<const char*>(data), lengthCount, make_timeout_time_ms(8000));
         writer.end();
+        putchar(COMMAND_SUCCESS);
         return;
     }
 
-    printf("XBad params to memdownload.");
+    putchar(COMMAND_FAILURE);
+    printf("Bad params to memdownload.");
     return;
 }
 
@@ -579,18 +685,22 @@ void handleMemUpload(const char* start) {
         reader.close();
 
         if (bytesRead <= 0) {
-            printf("XBad memory buffer %d, %d.", startAddress, bytesRead);
+            putchar(COMMAND_FAILURE);
+            printf("Bad memory buffer %d, %d.", startAddress, bytesRead);
         }
         else {
             if (!sendLoadBufferToMachine(startAddress, bytesRead)) {
-                printf("XFailed to send buffer to machine.");    
+                putchar(COMMAND_FAILURE);
+                printf("Failed to send buffer to machine.");    
             }
         }
 
+        putchar(COMMAND_SUCCESS);
         return;
     }
 
-    printf("XBad params to memdownload.");
+    putchar(COMMAND_FAILURE);
+    printf("Bad params to memdownload.");
     return;
 
 
@@ -607,9 +717,11 @@ void pollUsbCommandHandler() {
     char read;
     if (stdio_usb.in_chars(&read, 1) == 1) {
 
-        if (read == '\r') {
+        if (read == COMMAND_END) {
             commandBuffer[commandLength] = 0;
             int args = escapeCommandLine(commandBuffer);
+
+            putchar(COMMAND_RESPONSE_BEGIN);
             // process command
             if (strcmp(commandBuffer, "upload") == 0) {
                 const char* name = commandBuffer + 7;
@@ -662,13 +774,22 @@ void pollUsbCommandHandler() {
                 const char* n1 = commandBuffer + strlen(commandBuffer) + 1;
                 handleMemUpload(n1);
             }              
-            else if (commandBuffer[0] != '\0') {
-                printf("XUnknown command: %s\n", commandBuffer);
+            else {
+                putchar(COMMAND_FAILURE);
+                printf("Unknown command: %s\n", commandBuffer);
             }
+            putchar(COMMAND_RESPONSE_END);
             commandLength = 0;
         }
         else {
-            if (commandLength < sizeof(commandBuffer) - 1) {
+
+            if (commandLength == 0) {
+                if (read == COMMAND_START) {
+                    commandBuffer[commandLength] = ' ';
+                    commandLength++;
+                }
+            }
+            else if (commandLength < sizeof(commandBuffer) - 1) {
                 commandBuffer[commandLength] = read;
                 commandLength++;
             }

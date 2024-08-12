@@ -12,7 +12,9 @@
 	],
 	"settings": {
 		"files.associations": {
-			"limits": "c"
+			"limits": "c",
+			"span": "cpp",
+			"type_traits": "cpp"
 		},
 		"cortex-debug.variableUseNaturalFormat": false
 	}

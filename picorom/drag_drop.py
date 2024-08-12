@@ -68,7 +68,7 @@ class MainWindowWidget(QtWidgets.QWidget):
                 snapshot = Z80Snapshot()
                 snapshot.process_file(self.fname)
 
-                usb.sendData('/dev/ttyACM0', "snapupload", snapshot.to_bytes())
+                usb.send_command('/dev/ttyACM0', "snapupload", snapshot.to_bytes(), None)
                 self.lbl.setText("Sent")
             except Exception as ex:
                 self.lbl.setText(str(ex))

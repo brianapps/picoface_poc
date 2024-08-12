@@ -97,7 +97,7 @@ class Z80Snapshot:
     def process_file(self, fn):
         file_bytes = pathlib.Path(fn).read_bytes()
         off = self.header.from_bytes(file_bytes)
-        print(self.header)
+        # print(self.header)
         decomp_data = bytearray(0x4000)
 
 
@@ -108,7 +108,7 @@ class Z80Snapshot:
         if not self.header.v1format:
             while off < len(file_bytes):
                 blocklen, pagenumber = struct.unpack("<HB", file_bytes[off : off + 3])
-                print(f"Block: Page={pagenumber}, length={blocklen}")
+                # print(f"Block: Page={pagenumber}, length={blocklen}")
                 page_addr = page_to_address.get(pagenumber)
                 if page_addr is None:
                     raise Exception(f"Unsupported page number={pagenumber}")
@@ -118,18 +118,18 @@ class Z80Snapshot:
                 if blocklen != 0xFFFF:
                     s = decomp(file_bytes, off, blocklen, decomp_data)
                     self.membuffer[page_addr - 0x4000 : page_addr] = decomp_data
-                    print(f"Decomp length={s}")
+                    # print(f"Decomp length={s}")
                     off += blocklen
                 else:
                     self.membuffer[page_addr - 0x4000 : page_addr] = file_bytes[off : off + 0x4000 ]
                     off += 16384
         else:
             if (self.header.flags1 & 1 << 5) != 0:
-                print("V1 compressed")
+                # print("V1 compressed")
                 if file_bytes[-4:] != bytes([0, 0xED, 0xED , 0]):
                     raise Exception("No end of block marker present")
                 s = decomp(file_bytes, off, len(file_bytes) - 34, self.membuffer)
-                print(f"Decomp length={s}")
+                # print(f"Decomp length={s}")
             else:
                 self.membuffer = file_bytes[off: 48 * 1024 + off]
 
@@ -160,16 +160,24 @@ class Z80Snapshot:
 
 if __name__ == "__main__":
 
-    # process_file('Commando.z80')
-    # process_file('com.z80')
+    import argparse
+    import lz4.block
 
-    # process_file('Boulder Dash.z80')
+    parser = argparse.ArgumentParser(
+        description = 'Convert z80 file to z80z file'
+    )
 
-    s1 = Z80Snapshot()
-    s2 = Z80Snapshot()
+    parser.add_argument('infile')
+    parser.add_argument('outfile')
 
-    s1.process_file('/home/brian/Downloads/speccy/z80/Ah Diddums (1983)(Imagine)(16K)[a2].z80')
-    
+    args = parser.parse_args()
 
-    with open('test.z80', 'wb') as fp:
-        fp.write(s1.to_bytes())
+
+    print("convert z80 to v1 uncompressed")
+    snapshot = Z80Snapshot()
+    snapshot.process_file(args.infile)
+    input_data = snapshot.to_bytes()
+    input_data = lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)        
+
+    with open(args.outfile, 'wb') as fp:
+        fp.write(input_data)
