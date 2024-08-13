@@ -83,7 +83,7 @@ def receive_data(ser):
         elif packettype == START_OF_PACKET:
             header = ser.read(2)
             packet_size = struct.unpack(">H", header)[0]
-            print(f"packet: {packet_size}")
+            # print(f"packet: {packet_size}")
             packet_data = ser.read(packet_size)
             if len(packet_data) != packet_size:
                 print("Didn't read the entire packet")

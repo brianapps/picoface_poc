@@ -57,10 +57,18 @@ project(picorom C CXX ASM)
 pico_sdk_init()
 
 add_subdirectory(littlefs-lib)
+add_subdirectory(FatFs_SPI)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom picorom.cxx nmi.c lz4.c http_server.cxx usb_command_handler.cxx piohandler.S)
+add_executable(picorom 
+        picorom.cxx
+        nmi.c
+        lz4.c
+        http_server.cxx
+        usb_command_handler.cxx
+        sd_config.c
+        piohandler.S)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")
@@ -97,6 +105,8 @@ target_compile_definitions(picorom PRIVATE
 target_link_libraries(picorom 
         hardware_pio
         pico_multicore
+        FatFs_SPI
+      
         "${WIFI_LIBS}"
         )
 

@@ -5,6 +5,8 @@
 #include "pico/stdio_usb.h"
 #include "pico/stdio/driver.h"
 #include "picorom.h"
+#include "ff.h"
+#include "hw_config.h"
 
 /*
 Supported commands
@@ -499,31 +501,72 @@ void handleupload(const char* name) {
 }
 
 
+bool strStartsWith(const char* str, const char* prefix) {
+    size_t prefixlen = strlen(prefix);
+    return strncmp(str, prefix, prefixlen) == 0;
+}
+
+
+
 void handleListFiles(const char* name) {
+
     CommStreamBufferWriter<1024> writer;
 
     writer.begin();
     writer.printf("Listing files for %s\n", name);
 
-    int dir = pico_dir_open(name);
+    if (strStartsWith(name, "/sd")) {
+        writer.printf("Using SDCard\n");
 
-    if (dir < 0) {
-        writer.printf("Failed to open directory %d\n", dir);
-    }
-    else {
+        // sd_card_t *pSD = sd_get_by_num(0);
+        // f_mount(&pSD->fatfs, pSD->pcName, 1);        
 
-        lfs_info info;
+        DIR dir = {0};
+        FILINFO fi = {0};
 
-        while (pico_dir_read(dir, &info) > 0) {
-            writer.printf("%s, %d, %d\n", info.name, info.size, info.type);
+        FRESULT res = f_findfirst(&dir, &fi, name + 3, "*");
+
+        
+
+
+        while (res == FR_OK && fi.fname[0] != '\0') {
+            writer.printf("%s, %d, %d\n", fi.fname, fi.fattrib, (size_t)(fi.fsize));
+            res = f_findnext(&dir, &fi);
         }
 
-        pico_dir_close(dir);
-    }
+        if (res != FR_OK) {
+            writer.printf("Failed to list files %d\n", res);
+        }
 
-    pico_fsstat_t stats;
-    pico_fsstat(&stats);
-    writer.printf("FSInfo count=%d, size=%d, used=%d\n", stats.block_count, stats.block_size, stats.blocks_used);
+
+
+        f_closedir(&dir);
+
+        
+
+    } 
+    else {
+        int dir = pico_dir_open(name);
+
+        if (dir < 0) {
+            writer.printf("Failed to open directory %d\n", dir);
+        }
+        else {
+
+            lfs_info info;
+
+            while (pico_dir_read(dir, &info) > 0) {
+                writer.printf("%s, %d, %d\n", info.name, info.size, info.type);
+            }
+
+            pico_dir_close(dir);
+        }
+
+        pico_fsstat_t stats;
+        pico_fsstat(&stats);
+        writer.printf("FSInfo count=%d, size=%d, used=%d\n", stats.block_count, stats.block_size, stats.blocks_used);
+    }
+    
     writer.end();
 
     putchar(COMMAND_SUCCESS);

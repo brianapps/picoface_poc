@@ -17,6 +17,10 @@
 
 #include "blink.pio.h"
 
+#include "f_util.h"
+#include "ff.h"
+#include "hw_config.h"
+
 #define LZ4_STATIC_LINKING_ONLY
 #include "lz4.h"
 #include "nmi.h"
@@ -601,6 +605,33 @@ bool readMachineMemToLoadBuffer(uint32_t startAddress, uint32_t length) {
     return false;
 }
 
+void mount_sd_card() {
+    sd_card_t *pSD = sd_get_by_num(0);
+    FRESULT fr = f_mount(&pSD->fatfs, pSD->pcName, 1);
+    if (fr == FR_OK) {
+        printf("Mounted SD CARD\n");
+        DIR dir = {0};
+        FILINFO fi = {0};
+        fr = f_findfirst(&dir, &fi, "/A", "*");
+        printf("Find first result: %d\n", fr);
+        int c = 0;
+
+        while (fr == FR_OK && fi.fname[0] != '\0') {
+            c++;
+            printf("File: %s, attr: %X, size: %llu\n", fi.fname, fi.fattrib, fi.fsize);
+            fr = f_findnext(&dir, &fi);
+        }
+
+        printf("File count: %d\n", c);
+
+        f_closedir(&dir);
+    }
+    else {
+        printf("Failed to mount SD CARD\n");
+    }
+}
+
+
 void init_file_system() {
     if (pico_mount(false) != LFS_ERR_OK) {
         LOG("Mount failed, try formatting\n");
@@ -608,6 +639,7 @@ void init_file_system() {
             LOG("Mount failed, after formatting\n");
         }
     }
+    mount_sd_card();
 }
 
 
@@ -712,7 +744,7 @@ int main() {
     gpio_set_dir(PIN_NMI, true);    
 
 
-    sleep_ms(200);
+    sleep_ms(1200);
     init_file_system();
 
     #ifdef WIFI_ENABLE
