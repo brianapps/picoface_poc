@@ -14,7 +14,9 @@
 		"files.associations": {
 			"limits": "c",
 			"span": "cpp",
-			"type_traits": "cpp"
+			"type_traits": "cpp",
+			"diskio.h": "c",
+			"ff.h": "c"
 		},
 		"cortex-debug.variableUseNaturalFormat": false
 	}

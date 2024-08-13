@@ -17,9 +17,10 @@ BORDCR: equ  0x5C48
 
 
 ACTION_BEGIN_SNAP_READ: equ 0x01
-// param1 = name pointer - -- if name pointer is zero load from snapshot currently in
+// param1 (word) = name pointer - -- if name pointer is zero load from snapshot currently in
 // the pico memory.
-// param2 = sna or z80 header offset
+// param2 (byte) = drive - 0 for internal pico flash, 1 for external sdcard
+// param3 (word) = sna or z80 header offset
 // on success
 // byte param1 snapshot type -- 0 for sna, 1 for z80
 
@@ -39,7 +40,8 @@ ACTION_SNA_NEXT_WRITE equ 0x04
 
 ACTION_SNAP_LIST equ 0x05
 // WORD param1  = start number
-// WORD param2 = destination to write results
+// BYTE drive = 0 for internal flash, 1 for external sd
+// WORD param3 = destination to write results
 //  
 // RESULTS are
 //     BYTE countReturned  (will be no more than 10)
@@ -210,6 +212,7 @@ nmientry:
 1:  cp STARTUP_ACTION_LOAD_SNAP
     jr nz, 1F
     ld hl, 0
+    xor a
     call loadsnapshot
     jr .exitnoscreenrestore
 
@@ -260,9 +263,11 @@ iff2save:
 ; start_up_param2: WORD 0
 
 
-start_up_action: BYTE STARTUP_ACTION_LOAD_MEMORY  
+start_up_action: BYTE 0  
 start_up_param1: WORD 40000
 start_up_param2: WORD 20000
+
+start_up_sdcard_present: BYTE 0
 
 spare_size_hi .equ (spare_size - 255) / 256
 
@@ -776,6 +781,14 @@ changerom:
 ; -------------------------------------------
 ; Load snapshot menu
 loadscreen:
+    ld a, (start_up_sdcard_present)
+    cp 1
+    jr z, 1F
+    // disable the drive menu items because we don't need them
+    ld a, 0x80
+    ld (.menusd), a
+    ld (.menuint), a
+1:
     ld de, 0
 
 .fetchlist
@@ -783,8 +796,10 @@ loadscreen:
     ld (ix + 1), ACTION_SNAP_LIST
     ld (ix + 2), de
     ld (.startpos), de
+    ld a, (.drive)
+    ld (ix + 4), a
     ld hl, spare_space
-    ld (ix + 4), hl
+    ld (ix + 5), hl
     ld (ix + 0), 255
 1:  ld a, (ix)
     cp 255
@@ -816,6 +831,7 @@ loadscreen:
     inc hl
     ld d, (hl)
     ex hl, de
+    ld a, (.drive)
     jp loadsnapshot
 
 .nextkeyhandler:
@@ -832,19 +848,38 @@ loadscreen:
     ex hl, de
     jp .fetchlist
 
+.sdcardhandler:
+    ld a, 1
+    ld (.drive), a
+    ld de, 0
+    jp .fetchlist
+
+.intflashhandler:
+    xor a
+    ld (.drive), a
+    ld de, 0
+    jp .fetchlist
+
 .exithandler:    
     ret
 
+.drive BYTE 0
 .startpos WORD 0
 .titlemsg DZ "Load snapshot"
 .snap0 BYTE 0
 .exit DZ "Exit"
 .next DZ "Next"
 .prev DZ "Previous"
+.sdcard DZ "SD Card"
+.intflash DZ "Internal Flash"
 
 .menu     
     MENU_ITEM 0, 1, 1, .titlemsg, 0
     MENU_ITEM 'x', 14, 2, .exit, .exithandler
+.menusd
+    MENU_ITEM 's', 15, 2, .sdcard, .sdcardhandler
+.menuint
+    MENU_ITEM 'i', 15, 13, .intflash, .intflashhandler
 .menuprev
     MENU_ITEM 'p', 14, 9, .prev, .prevkeyhandler
     MENU_ITEM 'n', 14, 20, .next, .nextkeyhandler
@@ -1505,11 +1540,13 @@ sendsnapshottopico:
 
 
 // enter with hl pointing to the snapshot name string
+//            a  holding the drive byte
 loadsnapshot:
     ld ix, 0
     ld (ix + 2), hl
     ld hl, sna_header
-    ld (ix + 4), hl
+    ld (ix + 4), a
+    ld (ix + 5), hl
     ld (ix + 1), ACTION_BEGIN_SNAP_READ
     ld (ix + 0), 255
 1:  ld a, (ix)

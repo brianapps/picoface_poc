@@ -62,7 +62,8 @@ with open("../picorom/nmi.h", "w") as fp:
     fp.write(f"#define EXITNMI 0x{exitnmi:x}\n")
     fp.write(f"#define STARTUP_COMMAND_OFFSET 0x{startup_command:x}\n")
     fp.write(f"#define STARTUP_PARAM1_OFFSET 0x{startup_param1:x}\n")
-    fp.write(f"#define STARTUP_PARAM2_OFFSET 0x{startup_param2:x}\n")    
+    fp.write(f"#define STARTUP_PARAM2_OFFSET 0x{startup_param2:x}\n") 
+    fp.write(f"#define STARTUP_SDCARD_PRESENT 0x{symbols['start_up_sdcard_present']:x}\n") 
 
     for k, v in symbols.items():
         if k.startswith("STARTUP_ACTION_"):

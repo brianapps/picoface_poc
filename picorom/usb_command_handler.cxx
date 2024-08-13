@@ -7,6 +7,9 @@
 #include "picorom.h"
 #include "ff.h"
 #include "hw_config.h"
+#include "file_wrapper.h"
+
+
 
 /*
 Supported commands
@@ -478,7 +481,10 @@ int escapeCommandLine(char* command) {
 
 void handleupload(const char* name) {
     CommStreamReader reader;
-    int file = pico_open(name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
+
+    FileHandle file;
+
+    file.open(name, false);
     
     if (reader.begin()) {
         char buffer[4096];
@@ -494,89 +500,50 @@ void handleupload(const char* name) {
                 break;
             }
 
-            pico_write(file, buffer, read);
+            file.write(buffer, read);
         }
     }
-    pico_close(file);
+
+    file.close();
 }
-
-
-bool strStartsWith(const char* str, const char* prefix) {
-    size_t prefixlen = strlen(prefix);
-    return strncmp(str, prefix, prefixlen) == 0;
-}
-
 
 
 void handleListFiles(const char* name) {
-
     CommStreamBufferWriter<1024> writer;
 
     writer.begin();
     writer.printf("Listing files for %s\n", name);
+    DirHandle dir;
 
-    if (strStartsWith(name, "/sd")) {
-        writer.printf("Using SDCard\n");
-
-        // sd_card_t *pSD = sd_get_by_num(0);
-        // f_mount(&pSD->fatfs, pSD->pcName, 1);        
-
-        DIR dir = {0};
-        FILINFO fi = {0};
-
-        FRESULT res = f_findfirst(&dir, &fi, name + 3, "*");
-
-        
-
-
-        while (res == FR_OK && fi.fname[0] != '\0') {
-            writer.printf("%s, %d, %d\n", fi.fname, fi.fattrib, (size_t)(fi.fsize));
-            res = f_findnext(&dir, &fi);
-        }
-
-        if (res != FR_OK) {
-            writer.printf("Failed to list files %d\n", res);
-        }
-
-
-
-        f_closedir(&dir);
-
-        
-
-    } 
-    else {
-        int dir = pico_dir_open(name);
-
-        if (dir < 0) {
-            writer.printf("Failed to open directory %d\n", dir);
-        }
-        else {
-
-            lfs_info info;
-
-            while (pico_dir_read(dir, &info) > 0) {
-                writer.printf("%s, %d, %d\n", info.name, info.size, info.type);
+    if (dir.open(name)) {
+        while (dir.fileName()[0] != '\0') {
+            writer.printf("%s, %d, %d\n", dir.fileName(), dir.fileSize(), dir.isDirectory());
+            if (!dir.next()) {
+                break;
             }
-
-            pico_dir_close(dir);
         }
 
-        pico_fsstat_t stats;
-        pico_fsstat(&stats);
-        writer.printf("FSInfo count=%d, size=%d, used=%d\n", stats.block_count, stats.block_size, stats.blocks_used);
+        uint32_t blockCount, blockSize, blocksUsed;
+        if (dir.getStats(blockSize, blockCount, blocksUsed)) {
+            writer.printf("FSInfo count=%d, size=%d, used=%d\n", blockCount, blockSize, blocksUsed);
+        }
     }
-    
+    else {
+       writer.printf("Failed to open directory %d\n", dir);
+    }
     writer.end();
-
     putchar(COMMAND_SUCCESS);
 }
 
 
-void handleDownload(const char* filename) {
-    int file = pico_open(filename, LFS_O_RDONLY);
 
-    if (file < 0) {
+
+
+void handleDownload(const char* filename) {
+
+    FileHandle file;
+
+    if (!file.open(filename, true)) {
         putchar(COMMAND_FAILURE);
         printf("Failed to open file to download %s\n", filename);
         return;
@@ -584,12 +551,10 @@ void handleDownload(const char* filename) {
 
     char buffer[4096];
     CommStreamWriter writer;
-    writer.begin(pico_size(file));
-
-
+    writer.begin(file.size());
 
     while (true) {
-        int read = pico_read(file, buffer, sizeof(buffer));
+        int read = file.read(buffer, sizeof(buffer));
 
         if (read == 0) {
             writer.end();
@@ -604,8 +569,8 @@ void handleDownload(const char* filename) {
         }
         writer.write(buffer, read, make_timeout_time_ms(2000));
     }
-    
-    pico_close(file);
+
+    file.close();
 }
 
 

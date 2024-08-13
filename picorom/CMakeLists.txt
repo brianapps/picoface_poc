@@ -67,6 +67,7 @@ add_executable(picorom
         lz4.c
         http_server.cxx
         usb_command_handler.cxx
+        file_wrapper.cxx
         sd_config.c
         piohandler.S)
 

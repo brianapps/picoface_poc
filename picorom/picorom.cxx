@@ -25,45 +25,10 @@
 #include "lz4.h"
 #include "nmi.h"
 #include "picorom.h"
+#include "file_wrapper.h"
 
 extern const uint8_t FGH_ROM[];
 extern const uint32_t FGH_ROM_SIZE;
-
-/*
-// multiplexed address pins
-const uint8_t PIN_MA0 = 2;
-const uint8_t PIN_MA1 = 3;
-const uint8_t PIN_MA2 = 4;
-const uint8_t PIN_MA3 = 5;
-const uint8_t PIN_MA4 = 6;
-const uint8_t PIN_MA5 = 7;
-const uint8_t PIN_MA6 = 8;
-const uint8_t PIN_NOT_M1 = 9;
-const uint8_t PIN_NOT_WR = 10;
-const uint8_t PIN_D0 = 11;
-const uint8_t PIN_D1 = 12;
-const uint8_t PIN_D2 = 13;
-const uint8_t PIN_D3 = 14;
-const uint8_t PIN_D4 = 15;
-const uint8_t PIN_D5 = 16;
-const uint8_t PIN_D6 = 17;
-const uint8_t PIN_D7 = 18;
-
-const uint8_t PIN_RESET = 19;
-
-// set high to disable rom.
-// When low /CSROM is floating but when high this pulls /CSROM to GND and
-// therefore gives the pico control of the data lines when the Z80 is 
-// accessing memory in the lower 16KB.
-const uint8_t PIN_CSROM = 20; 
-const uint8_t PIN_PICOREQ = 21;
-const uint8_t PIN_XE = 22;
-
-const uint8_t PIN_USER_SWITCH = 26;
-const uint8_t PIN_NMI = 27;
-
-*/
-
 
 // set high to disable rom.
 // When low /CSROM is floating but when high this pulls /CSROM to GND and
@@ -81,7 +46,6 @@ const uint SM_OUTDATA = 1;
 
 const uint8_t PIN_D0 = 12;
 const uint8_t PIN_A0xA8 = 4;
-
 
 
 struct MYSTATE {
@@ -104,11 +68,12 @@ volatile struct MYSTATE rom_state = {
     .flags = 0,  .nmi_active=0, .writableStartAddress=32768, .flags_on_nmi_exit= 0
 };
 uint8_t rom_data[32768];
-
-bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2);
-
-
 static bool enable_logging = true;
+
+
+bool sendNmiRequest(uint8_t command, uint16_t param1, uint16_t param2);
+
+
 
 void LOG(const char* format, ...) {
     if (enable_logging) {
@@ -164,18 +129,14 @@ void __time_critical_func(do_my_pio)() {
 #define SNA_LOAD_SIZE (LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(SNA_FILE_SIZE))
 
 static char snap_load_buffer[SNA_LOAD_SIZE + 1024];
-
-
 const char* current_snap_data = NULL;
 uint32_t current_snap_offset =  0;
 uint32_t current_snap_size = 0;
-
-
-
 uint32_t current_sna_write_offset = 0;
+static bool sd_card_mounted = false;
 
 
-void load_snapshot_file(const char* fileAndExt) {
+void load_snapshot_file(uint8_t drive, const char* fileAndExt) {
     char filename[128];
     int filePartLen = strlen(fileAndExt);
     memcpy(filename, fileAndExt, filePartLen);
@@ -199,21 +160,24 @@ void load_snapshot_file(const char* fileAndExt) {
         current_snap_size = SNA_FILE_SIZE;
     }
 
+
     strcpy(filename + filePartLen + 1, ext);
     LOG("File name and extension: %s\n", filename);
-    int file = pico_open(filename, LFS_O_RDONLY);
-    size_t file_size = pico_size(file);
+
+    FileHandle file;
+    file.open(drive == 1 ? Drive::EXTERNAL_SD_CARD : Drive::INTERNAL_FLASH, filename, true);
+    size_t file_size = file.size();
 
     if (isCompressed) {
-        pico_read(file, snap_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
+        file.read(snap_load_buffer + SNA_LOAD_SIZE - file_size, file_size);
         int res = LZ4_decompress_safe_partial(snap_load_buffer + SNA_LOAD_SIZE - file_size, snap_load_buffer, file_size, current_snap_size, current_snap_size);
         LOG("Decompress result: %d, original size: %d\n", res, file_size);
     }
     else {
-        pico_read(file, snap_load_buffer, current_snap_size);
+        file.read(snap_load_buffer, current_snap_size);
     }
 
-    pico_close(file);
+    file.close();
     current_snap_data = snap_load_buffer;
 }
 
@@ -298,31 +262,39 @@ bool add_file_to_list(const char* name, const uint16_t destoffset, uint16_t& str
 void nmi_action_list_sna() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint16_t start =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
-    uint16_t destoffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
+    uint8_t drive = nmi_rom_data[4];
+    uint16_t destoffset =  (nmi_rom_data[6] << 8) |  nmi_rom_data[5];
     uint16_t stringoffset = destoffset + 22;
 
-    LOG("List snaps starting at %d and storing at %X\n", start, destoffset);
+    LOG("List snaps for drive %d, starting at %d and storing at %X\n", drive, start, destoffset);
 
-    int dir = pico_dir_open("/");
+    DirHandle dir;
+
+    dir.open(drive == 1 ? "/sd" : "/");
+
     int16_t foundsofar = 0;
     struct lfs_info info;
 
     nmi_rom_data[destoffset] = 0;
     nmi_rom_data[destoffset + 1] = 0;
 
-    while (pico_dir_read(dir, &info) > 0) {
-        if (info.type == LFS_TYPE_REG) {
-            const char* ext = split_filename_and_get_ext(info.name);
+    while (!dir.atEnd()) {
+        if (!dir.isDirectory()) {
+            char fname[256];
+            strcpy(fname, dir.fileName());
+            const char* ext = split_filename_and_get_ext(fname);
             if (is_snapshot_ext(ext)) {
                 if (foundsofar >= start) {
-                    if (!add_file_to_list(info.name, destoffset, stringoffset))
+                    if (!add_file_to_list(fname, destoffset, stringoffset))
                         break;
                 }
                 foundsofar++;
             }
         }
+        if (!dir.next())
+            break;
     }
-    pico_dir_close(dir);
+    dir.close();
 }
 
 
@@ -443,35 +415,41 @@ void nmi_action_write_data_to_pico() {
     }
 }
 
+void nmi_action_begin_snap_read() {
+    uint8_t* nmi_rom_data = rom_data + 16384;
+    uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
+    uint8_t drive = nmi_rom_data[4];
+    uint32_t headeroffset =  (nmi_rom_data[6] << 8) |  nmi_rom_data[5];
 
-void process_nmi_request() {
+    if (nameoffset != 0) {
+        LOG("Loading %s\n", nmi_rom_data + nameoffset);
+        load_snapshot_file(drive, reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
+        LOG("Start snapshot, size = %d, head destination: %X\n", current_snap_size, headeroffset);
+    } else {
+        current_snap_data = snap_load_buffer;
+    }
+
+    if (current_snap_size == Z80_FILE_SIZE) {
+        LOG("Sending Z80 file header\n");
+        nmi_rom_data[2] = 1;
+        memcpy(nmi_rom_data + headeroffset, current_snap_data, Z80_HEADER_SIZE);
+        current_snap_offset = Z80_HEADER_SIZE;
+    }
+    else {
+        LOG("Sending SNA file header\n");
+        nmi_rom_data[2] = 0;
+        memcpy(nmi_rom_data + headeroffset, current_snap_data, SNA_HEADER_SIZE);
+        current_snap_offset = SNA_HEADER_SIZE;
+    }
+}
+
+
+void processNmiRequest() {
     uint8_t* nmi_rom_data = rom_data + 16384;
     uint8_t action = nmi_rom_data[1];
     LOG("Action to process: %d\n", action);
     if (action == ACTION_BEGIN_SNAP_READ) {
-        uint32_t nameoffset = (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
-        uint32_t headeroffset =  (nmi_rom_data[5] << 8) |  nmi_rom_data[4];
-
-        if (nameoffset != 0) {
-            LOG("Loading %s\n", nmi_rom_data + nameoffset);
-            load_snapshot_file(reinterpret_cast<const char*>(nmi_rom_data) + nameoffset);
-            LOG("Start snapshot, size = %d, head destination: %X\n", current_snap_size, headeroffset);
-        } else {
-            current_snap_data = snap_load_buffer;
-        }
-
-        if (current_snap_size == Z80_FILE_SIZE) {
-            LOG("Sending Z80 file header\n");
-            nmi_rom_data[2] = 1;
-            memcpy(nmi_rom_data + headeroffset, current_snap_data, Z80_HEADER_SIZE);
-            current_snap_offset = Z80_HEADER_SIZE;
-        }
-        else {
-            LOG("Sending SNA file header\n");
-            nmi_rom_data[2] = 0;
-            memcpy(nmi_rom_data + headeroffset, current_snap_data, SNA_HEADER_SIZE);
-            current_snap_offset = SNA_HEADER_SIZE;
-        }
+        nmi_action_begin_snap_read();
     }
     else if (action == ACTION_SNAP_READ_NEXT) {
         uint16_t offset =  (nmi_rom_data[3] << 8) |  nmi_rom_data[2];
@@ -523,10 +501,10 @@ inline bool sendNmiAndWaitForCompletion(uint8_t command, uint16_t param1, uint16
     // accessed once and we fail to process requests from the nmi
     // rom and the spectrum hangs.
     volatile uint8_t* nmi_rom_data = rom_data + 16384;
-    if (send_nmi_request(command, param1, param2)) {
+    if (sendNmiRequest(command, param1, param2)) {
         while (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
             if (nmi_rom_data[0] == 255) {
-                process_nmi_request();
+                processNmiRequest();
             }            
         }
         return true;
@@ -545,10 +523,10 @@ const uint8_t* getSnapshotData(size_t& snapshotLength) {
     enable_logging = false;
     const uint8_t* data = nullptr;
 
-    if (send_nmi_request(STARTUP_ACTION_TRANSFER_SNAP, 0, 0)) {
+    if (sendNmiRequest(STARTUP_ACTION_TRANSFER_SNAP, 0, 0)) {
         while (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
             if (nmi_rom_data[0] == 255) {
-                process_nmi_request();
+                processNmiRequest();
             }            
         }
         snapshotLength = SNA_FILE_SIZE;
@@ -605,45 +583,32 @@ bool readMachineMemToLoadBuffer(uint32_t startAddress, uint32_t length) {
     return false;
 }
 
-void mount_sd_card() {
+void mountSdCard() {
     sd_card_t *pSD = sd_get_by_num(0);
     FRESULT fr = f_mount(&pSD->fatfs, pSD->pcName, 1);
     if (fr == FR_OK) {
-        printf("Mounted SD CARD\n");
-        DIR dir = {0};
-        FILINFO fi = {0};
-        fr = f_findfirst(&dir, &fi, "/A", "*");
-        printf("Find first result: %d\n", fr);
-        int c = 0;
-
-        while (fr == FR_OK && fi.fname[0] != '\0') {
-            c++;
-            printf("File: %s, attr: %X, size: %llu\n", fi.fname, fi.fattrib, fi.fsize);
-            fr = f_findnext(&dir, &fi);
-        }
-
-        printf("File count: %d\n", c);
-
-        f_closedir(&dir);
+        sd_card_mounted = true;
+        LOG("Mounted SD CARD\n");
     }
     else {
-        printf("Failed to mount SD CARD\n");
+        sd_card_mounted = false;
+        LOG("Failed to mount SD CARD\n");
     }
 }
 
 
-void init_file_system() {
+void initFileSystem() {
     if (pico_mount(false) != LFS_ERR_OK) {
         LOG("Mount failed, try formatting\n");
         if (pico_mount(true) != LFS_ERR_OK) {
             LOG("Mount failed, after formatting\n");
         }
     }
-    mount_sd_card();
+    mountSdCard();
 }
 
 
-bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
+bool sendNmiRequest(uint8_t command, uint16_t param1, uint16_t param2) {
 
     if (((rom_state.flags & 0x2) != 0) || rom_state.nmi_active) {
         return false;
@@ -657,6 +622,7 @@ bool send_nmi_request(uint8_t command, uint16_t param1, uint16_t param2) {
         nmi_rom_data[STARTUP_PARAM1_OFFSET + 1] = (param1 >> 8) & 0xFF;
         nmi_rom_data[STARTUP_PARAM2_OFFSET] = param2 & 0xFF;
         nmi_rom_data[STARTUP_PARAM2_OFFSET + 1] = (param2 >> 8) & 0xFF;
+        nmi_rom_data[STARTUP_SDCARD_PRESENT] = sd_card_mounted ? 1 : 0;
         rom_state.flags |= 2;
         gpio_put(PIN_NMI, false);
         sleep_ms(3);
@@ -744,8 +710,8 @@ int main() {
     gpio_set_dir(PIN_NMI, true);    
 
 
-    sleep_ms(1200);
-    init_file_system();
+    sleep_ms(200);
+    initFileSystem();
 
     #ifdef WIFI_ENABLE
     if (cyw43_arch_init()) {
@@ -803,7 +769,7 @@ int main() {
         #endif
 
         if (nmi_rom_data[0] == 255) {
-            process_nmi_request();
+            processNmiRequest();
         }
 
         bool isup = gpio_get(PIN_USER_SWITCH);
@@ -816,7 +782,7 @@ int main() {
             }
 
             if (count < 1000) {
-                if (!send_nmi_request(0, 0, 0)) {
+                if (!sendNmiRequest(0, 0, 0)) {
                     LOG("Couldn't send NMI because an NMI is already active.\n");
                 }
             }
