@@ -372,7 +372,7 @@ void nmi_action_change_rom() {
             LOG("Decompress result: %d, original size: %d\n", res, file_size);
         }
         else {
-            pico_read(file, snap_load_buffer, SNA_FILE_SIZE);
+            pico_read(file, rom_data, 16384);
         }
 
         pico_close(file);
