@@ -128,9 +128,11 @@ def send_command(port, command_text, input_data, output_file):
                 data = receive_data(ser)
                 if output_file is None:
                     print(data.decode('ascii',errors='ignore'))
-                else:
+                elif isinstance(output_file, str):
                     with open(output_file, "wb") as fp:
-                        fp.write(data)                
+                        fp.write(data)
+                else:
+                     output_file.write(data)   
             elif status == COMMAND_SUCCESS:
                 print("Command OK")
                 succeeded = True
@@ -158,12 +160,12 @@ def send_command(port, command_text, input_data, output_file):
                 message_bytes.extend(status)
                 
             
+def compress_data(input_data: bytes) -> bytes:
+    return lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)
+
+def default_port() -> str:
+    return "/dev/ttyACM0"
         
-
-
-
-        
-
 def escape_param(param : str) -> str:
     return param.replace(" ", "\\ ")
 
@@ -177,7 +179,7 @@ if __name__ == "__main__":
         description = 'send commands to pico board over serial usb'
     )
 
-    parser.add_argument('-p', '--port', default='/dev/ttyACM0')
+    parser.add_argument('-p', '--port', default=default_port())
     parser.add_argument('-i', '--input', help='input file')
     parser.add_argument('-z', '--compress', help='compress the input', action='store_const', const=True)
     parser.add_argument('-o', '--output', help='output file')

@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "nmirom"
+		},
+		{
+			"path": "scripts"
 		}
 	],
 	"settings": {

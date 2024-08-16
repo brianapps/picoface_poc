@@ -241,12 +241,15 @@ template<size_t bufferSize> bool CommStreamBufferWriter<bufferSize>::printf(cons
                 return false;
             }
 
-            if (written <= available) {
+            // written does not include the null terminator, so if written == avialable then
+            // the entire string has not been written because vsnprintf will always null terminate
+            if (written < available) {
                 bufferUsed += written;
                 return true;
             }
         }
 
+        // The printf can't fit into the entire buffer so just abandon the attempt
         if (bufferUsed == 0)
             return false;
 
@@ -508,29 +511,60 @@ void handleupload(const char* name) {
 }
 
 
-void handleListFiles(const char* name) {
+void handleListFiles(const char* name, bool json=false) {
     CommStreamBufferWriter<1024> writer;
 
     writer.begin();
-    writer.printf("Listing files for %s\n", name);
+    if (json) {
+        writer.printf("{\"files\": [");
+    }
+    else {
+        writer.printf("Listing files for %s, in json=%d\n", name);
+    }
     DirHandle dir;
+    bool first = true;
 
     if (dir.open(name)) {
         while (dir.fileName()[0] != '\0') {
-            writer.printf("%s, %d, %d\n", dir.fileName(), dir.fileSize(), dir.isDirectory());
+            if (json) {
+                if (!first) {
+                    writer.printf(",");
+                }
+                // TODO esccape the file name
+                writer.printf("{\"name\": \"%s\", \"dir\": %d, \"size\": %d}", 
+                    dir.fileName(), dir.isDirectory(), dir.fileSize());
+                first = false;
+            }
+            else{
+                writer.printf("%s, %d, %d\n", dir.fileName(), dir.fileSize(), dir.isDirectory());
+            }
             if (!dir.next()) {
                 break;
             }
         }
 
+        if (json)
+            writer.printf("]");
+
         uint32_t blockCount, blockSize, blocksUsed;
         if (dir.getStats(blockSize, blockCount, blocksUsed)) {
-            writer.printf("FSInfo count=%d, size=%d, used=%d\n", blockCount, blockSize, blocksUsed);
+            if(json) {
+                writer.printf(",\"stats\": {\"count\":%d, \"size\":%d, \"used\":%d}", blockCount, blockSize, blocksUsed);
+            }
+            else {
+                writer.printf("FSInfo count=%d, size=%d, used=%d\n", blockCount, blockSize, blocksUsed);
+            }
         }
     }
     else {
        writer.printf("Failed to open directory %d\n", dir);
     }
+
+    if (json) {
+        writer.printf("}");
+    }
+
+
     writer.end();
     putchar(COMMAND_SUCCESS);
 }
@@ -737,7 +771,8 @@ void pollUsbCommandHandler() {
             }
             else if (strcmp(commandBuffer, "ls") == 0) {
                 const char* name = commandBuffer + strlen(commandBuffer) + 1;
-                handleListFiles(name);
+                bool isJson = args == 3 && (strcmp("/json", name + strlen(name) + 1) == 0);
+                handleListFiles(name, isJson);
             }
             else if (strcmp(commandBuffer, "mkdir") == 0) {
                 const char* name = commandBuffer + strlen(commandBuffer) + 1;
