@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import serial
+import serial.tools.list_ports
 import struct
 import argparse
 import lz4.block
@@ -164,6 +165,9 @@ def compress_data(input_data: bytes) -> bytes:
     return lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)
 
 def default_port() -> str:
+    for p in serial.tools.list_ports.comports():
+        if p.vid == 0x2E8A and p.pid == 0x0A:
+            return p.device
     return "/dev/ttyACM0"
         
 def escape_param(param : str) -> str:
