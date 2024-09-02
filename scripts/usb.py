@@ -78,7 +78,6 @@ def receive_data(ser):
     while True:
         packettype = ser.read(1)
         if packettype == END_OF_DATA:
-            print(f"end of data")
             ser.write(ACK)
             return data
         elif packettype == START_OF_PACKET:
@@ -135,7 +134,6 @@ def send_command(port, command_text, input_data, output_file):
                 else:
                      output_file.write(data)   
             elif status == COMMAND_SUCCESS:
-                print("Command OK")
                 succeeded = True
                 break
             elif status == COMMAND_FAILURE:

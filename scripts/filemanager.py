@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sys
 from PySide6.QtWidgets import QApplication, QTableView, QMainWindow, QItemDelegate, QAbstractItemView, QTreeView,QMessageBox, QFileDialog, QDialog
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QKeyEvent
@@ -124,6 +126,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
 
+        self.uploading = False
+        self.statusText = ""
+
 
         self.setAcceptDrops(False)
         self.model = MyTableModel()
@@ -153,9 +158,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         available = stats.block_size * stats.total_blocks
         used = stats.block_size * stats.used_blocks
         free = available - used
-        self.lblStats.setText(
-            f"Available: {available // 1024}KB, Used: {used // 1024}KB, Free {free // 1024}KB ({(100 * free) // available}%)"
-        )
+        self.statusText = f"Available: {available // 1024}KB, Used: {used // 1024}KB, Free {free // 1024}KB ({(100 * free) // available}%)"
+
+        if not self.uploading:
+            self.lblStats.setText(self.statusText)
 
     def downloadFile(self):
         selected = self.fileTreeView.selectedIndexes()
@@ -168,6 +174,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     ["download", remote_file]
                 )
                 usb.send_command(usb.default_port(), cmd, None, filename)
+                
+            
 
             except Exception as ex:
                 msg_box = QMessageBox(title=str(ex))
@@ -241,15 +249,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             e.setDropAction(Qt.CopyAction)
             e.accept()
 
-            needUpdate = False
+            self.uploading = True
+
             for url in e.mimeData().urls():
+                            
+                self.lblStats.setText(
+                    f"Uploading {Path(url.toLocalFile()).name}"
+                )
+                self.repaint()
                 if self.sendFileToPico(url.toLocalFile()):
-                    needUpdate  = True
+                    self.model.updateData()
                 else:
                     break
 
-            if needUpdate:
-                self.model.updateData()
+            self.uploading = False
+            self.lblStats.setText(self.statusText)
 
         else:
             e.ignore()            
