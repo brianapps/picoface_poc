@@ -519,7 +519,7 @@ void handleListFiles(const char* name, bool json=false) {
         writer.printf("{\"files\": [");
     }
     else {
-        writer.printf("Listing files for %s, in json=%d\n", name);
+        writer.printf("Listing files for %s\n", name);
     }
     DirHandle dir;
     bool first = true;

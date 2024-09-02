@@ -92,11 +92,22 @@ send_data:
     // shift
     lsl r2, r2, #1
     cmp r2, r_nmi_exit 
-    bne main_loop
+    beq exit_nmi
+
+    
+    // Just send anything non-zero to the putdata pio to indicate that we wish to hold
+    // the /CSROM line and continue serving ROM data from the pico
+    str r_rom_addr, [r_pio_base, #(PIO_TXF1_OFFSET) ]
+    b main_loop
 
 exit_nmi:
     // leaving nmi rom now
+    
     ldr r0, [r_rom_state, #12]     // read rom_state.flags_on_nmi_exit
+    // rom_state is zero to return to internal rom or 1 to serve up a custom ROM
+    // Can can just pass this to the putdata pio because 0 means set the /CSROM low to 
+    // enable the internal rom, anything else means hold the /CSROM line high.
+    str r0, [r_pio_base, #(PIO_TXF1_OFFSET) ] 
     str r0, [r_rom_state, #0]      // restore the rom_state flags
     ldr r0, [r_rom_state, #8]      // read writableStartAddress in case we are now going to serving up a writable rom
     mov r_writable_from, r0        // and put into r_writable_from for later checks 
@@ -112,17 +123,17 @@ exit_nmi:
 read_rom_disabled:
     beq main_loop          // zero flag is set if nmi check is not required
     cmp r2, r_nmi_rom_entry
-    bne main_loop          // If we aren't reading the nmi entry then loop back 
+    bne main_loop          // If we aren't accessing the nmi_entry address then loop back 
                            // otherwise activate the nmi rom
 
 activate_nmi:
-
     mov r0, #0                                  // always serve a NOP as first NMI instruction, this saves a read instruction
                                                 // but we need to ensure that nmi.asm also has a nop at location 0x66.
     str r0, [r_pio_base, #(PIO_TXF1_OFFSET) ]   // Send data to the PIO like an pio_sm_put() and this sends it off to the speccy.
                                                 // 13 cycles to complete from point A.
     mov r_writable_from, r0                     // NMI always allows writes, so set allowable writes from 0 onwards
     mov r0, #1
+    str r0, [r_pio_base, #(PIO_TXF1_OFFSET) ] 
     str r0, [r_rom_state, #4]            // nmi routine is now active
     str r0, [r_rom_state, #0]            // rom is enabled, because it is the nmi rom
     mov r_nmi_exit, r_nmi_rom_exit           // and set r_nmi_exit to actual exit address from the nmi rom

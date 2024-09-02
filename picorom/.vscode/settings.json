@@ -37,6 +37,6 @@
     "raspberry-pi-pico.cmakePath": "${HOME}/.pico-sdk/cmake/v3.28.0-rc6/bin/cmake",
     "raspberry-pi-pico.ninjaPath": "${HOME}/.pico-sdk/ninja/v1.12.1/ninja",
     "files.associations": {
-        "blink.pio.h": "c"
+        "blipicorom.pio.h": "c"
     }
 }
