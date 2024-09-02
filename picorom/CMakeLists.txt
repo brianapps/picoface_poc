@@ -11,7 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # == DO NEVER EDIT THE NEXT LINES for Raspberry Pi Pico VS Code Extension to work ==
 if(WIN32)
-   set(USERHOME $ENV{USERPROFILE})
+    set(USERHOME $ENV{USERPROFILE})
 else()
     set(USERHOME $ENV{HOME})
 endif()
@@ -75,7 +75,7 @@ pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(picorom ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+pico_generate_pio_header(picorom ${CMAKE_CURRENT_LIST_DIR}/picorom.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(picorom 0)

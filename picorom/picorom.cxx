@@ -15,7 +15,7 @@
 #include "littlefs-lib/pico_hal.h"
 
 
-#include "blink.pio.h"
+#include "picorom.pio.h"
 
 #include "f_util.h"
 #include "ff.h"
@@ -377,7 +377,7 @@ void nmi_action_change_rom() {
 
         pico_close(file);
         rom_state.flags_on_nmi_exit = 1;
-        rom_state.writableStartAddress = makeWritable ? 16 : 32768;
+        rom_state.writableStartAddress = makeWritable ? 64 : 32768;
         nmi_rom_data[0] = 0;
     }
 }
@@ -614,6 +614,7 @@ bool sendNmiRequest(uint8_t command, uint16_t param1, uint16_t param2) {
         return false;
     }
     else {
+
         uint8_t* nmi_rom_data = rom_data + 16384;
         memcpy(nmi_rom_data, NMI_ROM, NMI_ROM_SIZE);
         nmi_rom_data[0] = 0;
