@@ -20,7 +20,7 @@ startup_param1 = symbols["start_up_param1"]
 startup_command = symbols["start_up_action"]
 
 
-with open("../picorom/nmi.c", "w") as fp:
+with open("nmi.c", "w") as fp:
     fp.write("#include \"pico/stdlib.h\"\n\n")
 
     fp.write("const uint8_t NMI_ROM[] = {")
@@ -45,7 +45,7 @@ with open("../picorom/nmi.c", "w") as fp:
     # fp.write(f"const uint16_t STARTUP_PARAM2_OFFSET = 0x{startup_param2:x};\n")
 
 
-with open("../picorom/nmi.h", "w") as fp:
+with open("nmi.h", "w") as fp:
 
     fp.write("#ifndef __ASSEMBLER__\n")
     fp.write("extern const uint8_t NMI_ROM[];\n")

@@ -15,13 +15,10 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(PICO_SDK_PATH ${USERHOME}/.pico-sdk/sdk/1.5.1)
-set(PICO_TOOLCHAIN_PATH ${USERHOME}/.pico-sdk/toolchain/13_2_Rel1)
-if(WIN32)
-    set(pico-sdk-tools_DIR ${USERHOME}/.pico-sdk/tools/1.5.1)
-    include(${pico-sdk-tools_DIR}/pico-sdk-tools-config.cmake)
-    include(${pico-sdk-tools_DIR}/pico-sdk-tools-config-version.cmake)
-endif()
+set(sdkVersion 1.5.1)
+set(toolchainVersion 13_2_Rel1)
+set(picotoolVersion 2.0.0)
+include(${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 # ====================================================================================
 
 set(WIFI_ENABLE 0 CACHE BOOL "Enable wifi server, needs pico-w board.")
@@ -59,17 +56,34 @@ pico_sdk_init()
 add_subdirectory(littlefs-lib)
 add_subdirectory(FatFs_SPI)
 
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/nmirom.bin ${CMAKE_CURRENT_BINARY_DIR}/nmirom.sym
+        COMMAND sjasmplus --sym=${CMAKE_CURRENT_BINARY_DIR}/nmirom.sym ${CMAKE_CURRENT_SOURCE_DIR}/../nmirom/nmirom.asm
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../nmirom/nmirom.asm
+)
+
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/nmi.h ${CMAKE_CURRENT_BINARY_DIR}/nmi.c
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/asm_to_c_file.py
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/nmirom.bin ${CMAKE_CURRENT_BINARY_DIR}/nmirom.sym
+)
+
+
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(picorom 
         picorom.cxx
-        nmi.c
+        #nmi.c
         lz4.c
         http_server.cxx
         usb_command_handler.cxx
         file_wrapper.cxx
         sd_config.c
-        piohandler.S)
+        piohandler.S
+        ${CMAKE_CURRENT_BINARY_DIR}/nmi.c
+        ${CMAKE_CURRENT_BINARY_DIR}/nmi.h)
 
 pico_set_program_name(picorom "picorom")
 pico_set_program_version(picorom "0.1")
