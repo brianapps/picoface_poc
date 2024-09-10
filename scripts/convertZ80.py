@@ -1,3 +1,18 @@
+# Copyright (C) 2024 Brian Apps
+#
+# This file is part of picoFace.
+#
+# picoFace is free software: you can redistribute it and/or modify it under the terms of
+# the GNU General Public License as published by the Free Software Foundation, either
+# version 3 of the License, or (at your option) any later version.
+#
+# picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with picoFace. If 
+# not, see <https://www.gnu.org/licenses/>.
+
 
 from dataclasses import dataclass
 import struct
@@ -93,14 +108,10 @@ class Z80Snapshot:
         self.membuffer = bytearray(48 * 1024)
         self.header = Header()
 
-
-    def process_file(self, fn):
-        file_bytes = pathlib.Path(fn).read_bytes()
+    def process_bytes(self, file_bytes):
         off = self.header.from_bytes(file_bytes)
         # print(self.header)
         decomp_data = bytearray(0x4000)
-
-
 
         if not self.header.is48KSnapshot():
             raise Exception(f"Z80 file is not for 48K spectrum, mode={self.header.v2HardwareMode}")
@@ -132,6 +143,12 @@ class Z80Snapshot:
                 # print(f"Decomp length={s}")
             else:
                 self.membuffer = file_bytes[off: 48 * 1024 + off]
+        
+
+    def process_file(self, fn):
+        file_bytes = pathlib.Path(fn).read_bytes()
+        self.process_bytes(file_bytes)
+
 
 
     def to_bytes(self):

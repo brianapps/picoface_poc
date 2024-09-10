@@ -26,18 +26,6 @@
 			"group": {
 				"kind": "build",
 			}
-		},
-		{
-			"label": "create nmi.c",
-			"type": "shell",
-			"dependsOn": "compile nmi",
-			"command": "python3",
-			"args": ["to_c_file.py"],
-			"problemMatcher": [],
-			"group" : {
-				"kind": "build",
-				"isDefault": true
-			}
 		}
 	]
 }

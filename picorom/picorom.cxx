@@ -1,3 +1,20 @@
+/*
+Copyright (C) 2024 Brian Apps
+
+This file is part of picoFace.
+
+picoFace is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version.
+
+picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with picoFace. If 
+not, see <https://www.gnu.org/licenses/>.
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -50,16 +67,16 @@ const uint8_t PIN_A0xA8 = 4;
 
 struct MYSTATE {
     // bit 0 is set if we are serving a rom from the pico
-    // bit 1 is set if we should serve the nmi rom when
+    // bit 1 is set if we should serve the nmi rom when we execute an instruction at 0x66
     uint32_t flags;
     // non-zero if the nmi rom is active.
     uint32_t nmi_active;
-    // The addres in ROM that writes are enabled for. If a ROM is active then
-    // we allow writes from this address onwards. For writable ROM we prevent
+    // The address in ROM that writes are enabled from. If a ROM is active then
+    // we allow writes from this address onwards. For writable ROM swe prevent
     // write below address 16 because the normal Spectrum rom does write to
     // these lower locations in a number of places and relies on this having
     // no effect. Setting this value above 16KB effectively disables writes and
-    // means if are serving a ROM
+    // means we are serving a ROM
     uint32_t writableStartAddress;
     uint32_t flags_on_nmi_exit;
 };
@@ -74,7 +91,6 @@ static bool enable_logging = true;
 bool sendNmiRequest(uint8_t command, uint16_t param1, uint16_t param2);
 
 
-
 void LOG(const char* format, ...) {
     if (enable_logging) {
         va_list args;
@@ -86,9 +102,7 @@ void LOG(const char* format, ...) {
 
 extern "C" void piohandler();
 
-
 void __time_critical_func(do_my_pio)() {
-
     PIO pio = pio0;
     pio_sm_claim(pio, MY_SM);
     pio_sm_claim(pio, SM_OUTDATA);
@@ -109,7 +123,6 @@ void __time_critical_func(do_my_pio)() {
     sm_config_set_in_pins(&sm_config, PIN_A0xA8);
     sm_config_set_in_shift(&sm_config, true, true, 32);
     sm_config_set_sideset_pins(&sm_config, PIN_XE);
-
 
     pio_sm_init(pio, MY_SM, offset, &sm_config);
     pio_sm_set_enabled(pio, MY_SM, true);
@@ -160,7 +173,6 @@ void load_snapshot_file(uint8_t drive, const char* fileAndExt) {
         current_snap_size = SNA_FILE_SIZE;
     }
 
-
     strcpy(filename + filePartLen + 1, ext);
     LOG("File name and extension: %s\n", filename);
 
@@ -194,7 +206,6 @@ bool stringendswith(const char* str, const char* suffix) {
 inline bool is_snapshot_ext(const char* extension) {
     return (strcasecmp(extension, "sna") == 0) || (strcasecmp(extension, "snaz") == 0) ||
         (strcasecmp(extension, "z80") == 0) || (strcasecmp(extension, "z80z") == 0);
-
 }
 
 const char* split_filename_and_get_ext(char* name) {
@@ -695,8 +706,6 @@ int main() {
 
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_PROC1_BITS;
 
-    //set_sys_clock_khz(125 * 1000, true);
-
     memcpy(rom_data + 16384, NMI_ROM, NMI_ROM_SIZE);
     rom_state.flags = 0;
 
@@ -730,10 +739,6 @@ int main() {
     }
 
     #endif
-
-    printf("\xAB""Busctrl->priority %X\n", bus_ctrl_hw->priority);
-
-    uint32_t c = 0;
 
     uint8_t* nmi_rom_data = rom_data + 16384;
 

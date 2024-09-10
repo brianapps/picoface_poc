@@ -1,3 +1,19 @@
+/*
+Copyright (C) 2024 Brian Apps
+
+This file is part of picoFace.
+
+picoFace is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version.
+
+picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with picoFace. If 
+not, see <https://www.gnu.org/licenses/>.
+*/
 
 #include "hardware/regs/addressmap.h"
 #include "hardware/regs/pio.h"
@@ -12,6 +28,9 @@
 
 .type piohandler,%function
 
+// use a bunch of aliases for registers to back it
+// a bit easier to remember what registers are being
+// used for what.
 r_rom_addr .req r4
 r_pio_base .req r6
 r_rom_state .req r5
@@ -53,14 +72,14 @@ check_fifo_empty:
     // send data sm. We basically need to do this in about 18 cycles.
     // The code tries to avoid loads and stores to main memory because
     // these take two cycles. Accessing the pio state machines is via the SIO
-    // so these ldr and str instructions take one cycles.
+    // so these ldr and str instructions take one cycle.
 
     // The next 4 instructions are basically a pio_sm_get_blocking(pio0, 0)
     // And this pulls 32 bits from the address/data fetcher pio state machine
     // This ends up with r0 holding
     //
     //  bits 0-13 : lower 14 bits of the spectrum address
-    //  bit 15: Read flag = 1 for read this is effective the /WR line
+    //  bit 15: Read flag = 1 for read this is effectively the /WR line
     //  bit 16: /M1 flag = 0 for a M1 fetch 1 otherwise
     //  bits 17-24: the value on the data lines D0-D7 (useful only for writes)
     //  bits 25-31: random (this is stuff on the other gpio pins that we don't care about)
@@ -105,11 +124,11 @@ exit_nmi:
     
     ldr r0, [r_rom_state, #12]     // read rom_state.flags_on_nmi_exit
     // rom_state is zero to return to internal rom or 1 to serve up a custom ROM
-    // Can can just pass this to the putdata pio because 0 means set the /CSROM low to 
+    // Can just pass this to the putdata pio because 0 means set the /CSROM low to 
     // enable the internal rom, anything else means hold the /CSROM line high.
     str r0, [r_pio_base, #(PIO_TXF1_OFFSET) ] 
     str r0, [r_rom_state, #0]      // restore the rom_state flags
-    ldr r0, [r_rom_state, #8]      // read writableStartAddress in case we are now going to serving up a writable rom
+    ldr r0, [r_rom_state, #8]      // read writableStartAddress in case we are now going to serve up a writable rom
     mov r_writable_from, r0        // and put into r_writable_from for later checks 
     mov r0, #1                     // set r_nmi_exit to an invalid shifted address, because (addr << 18) is never going to
                                    // equal 1. Therefore we have effectively disabled the nmi exit check from now on

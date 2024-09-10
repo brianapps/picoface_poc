@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
 
+# Copyright (C) 2024 Brian Apps
+#
+# This file is part of picoFace.
+#
+# picoFace is free software: you can redistribute it and/or modify it under the terms of
+# the GNU General Public License as published by the Free Software Foundation, either
+# version 3 of the License, or (at your option) any later version.
+#
+# picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with picoFace. If 
+# not, see <https://www.gnu.org/licenses/>.
+
+
 import serial
 import serial.tools.list_ports
 import struct
@@ -29,9 +45,6 @@ NAK = b'\x18'
 
 
 PACKET_SIZE = 8192 * 3
-
-#PACKET_SIZE=4096
-
 
 
 def send_data(ser, bytesToSend):
@@ -204,6 +217,4 @@ if __name__ == "__main__":
             input_data = lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)
 
     send_command(args.port, join_params(args.cmdparams), input_data, args.output)
-
-
 
