@@ -1,19 +1,52 @@
 GAL16V8
 ChipB
 
+; Copyright (C) 2024 Brian Apps
+;
+; This file is part of picoFace.
+;
+; picoFace is free software: you can redistribute it and/or modify it under the terms of
+; the GNU General Public License as published by the Free Software Foundation, either
+; version 3 of the License, or (at your option) any later version.
+;
+; picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+; See the GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License along with picoFace. If 
+; not, see <https://www.gnu.org/licenses/>.
 
 
-/RD       /WR       /MREQ     /IOREQ    A15       A14       A5        X1        X0        GND
-XE        /PICOREQ  /JOYE     Y0        Y1        O0        O1        NC        NC        VCC  
+; Pin 1
+A14
+A13
+M1
+/MREQ
+/RD
+/WR
+A7
+A6
+A5  
+GND
+
+;Pin 11
+A15
+/JOYE  
+/IOREQ 
+NC
+MLE        
+/PICOREQ 
+A7xRD
+A6xM1
+A5xA13
+VCC
 
 
 
-O0 = X0 * XE + Y0 * /XE
-O1 = X1 * XE + Y1 * /XE
-
-JOYE = A5 + /IOREQ + /RD
-
-
+A5xA13 = A5 * MLE + A13 * /MLE
+A6xM1 = A6 * MLE + M1 * /MLE
+A7xRD = A7 * MLE + RD * /MLE
+/JOYE = A7 + A6 + A5 + /IOREQ + /RD
 PICOREQ = /A14*/A15*MREQ*RD*/WR + /A14*/A15*MREQ*WR*/RD
 
 DESCRIPTION

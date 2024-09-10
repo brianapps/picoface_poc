@@ -1,48 +1,48 @@
 
 
-Pin 19 = O0           XOR = 1   AC1 = 1
+Pin 19 = A0xA8        XOR = 1   AC1 = 1
   0  ---- ---- ---- ---- ---- ---- ---- ----
-  1  ---- ---- ---- x--- ---- ---- --x- ----
-  2  ---- ---- ---- ---- ---- ---- ---x x---
+  1  ---- ---- ---- ---- ---- ---- --x- x---
+  2  ---- ---- x--- ---- ---- ---- ---x ----
   3  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
   4  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
   5  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
   6  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
   7  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 18 = O1           XOR = 1   AC1 = 1
+Pin 18 = A1xA9        XOR = 1   AC1 = 1
   8  ---- ---- ---- ---- ---- ---- ---- ----
-  9  ---- ---- x--- ---- ---- ---- --x- ----
- 10  ---- ---- ---- ---- ---- ---- x--x ----
+  9  ---- ---- ---- ---- ---- ---- x-x- ----
+ 10  ---- x--- ---- ---- ---- ---- ---x ----
  11  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  12  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  13  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  14  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  15  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 17 = O2           XOR = 1   AC1 = 1
+Pin 17 = A2xA10       XOR = 1   AC1 = 1
  16  ---- ---- ---- ---- ---- ---- ---- ----
- 17  ---- x--- ---- ---- ---- ---- --x- ----
- 18  ---- ---- ---- ---- ---- x--- ---x ----
+ 17  ---- ---- ---- ---- ---- x--- --x- ----
+ 18  x--- ---- ---- ---- ---- ---- ---x ----
  19  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  20  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  21  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  22  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  23  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 16 = O3           XOR = 1   AC1 = 1
+Pin 16 = A3xA11       XOR = 1   AC1 = 1
  24  ---- ---- ---- ---- ---- ---- ---- ----
- 25  x--- ---- ---- ---- ---- ---- --x- ----
- 26  ---- ---- ---- ---- x--- ---- ---x ----
+ 25  ---- ---- ---- ---- x--- ---- --x- ----
+ 26  --x- ---- ---- ---- ---- ---- ---x ----
  27  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  28  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  29  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  30  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  31  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 15 = O4           XOR = 1   AC1 = 1
+Pin 15 = A4xA12       XOR = 1   AC1 = 1
  32  ---- ---- ---- ---- ---- ---- ---- ----
- 33  --x- ---- ---- ---- ---- ---- --x- ----
+ 33  ---- ---- ---- x--- ---- ---- --x- ----
  34  ---- ---- ---- ---- ---- ---- ---x --x-
  35  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  36  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
@@ -60,7 +60,7 @@ Pin 14 = ROME         XOR = 0   AC1 = 1
  46  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  47  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
-Pin 13 = XE           XOR = 0   AC1 = 1
+Pin 13 = MLE          XOR = 0   AC1 = 1
  48  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  49  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
  50  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx

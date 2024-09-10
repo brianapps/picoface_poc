@@ -1,17 +1,51 @@
 GAL16V8
 ChipA
 
+; Copyright (C) 2024 Brian Apps
+;
+; This file is part of picoFace.
+;
+; picoFace is free software: you can redistribute it and/or modify it under the terms of
+; the GNU General Public License as published by the Free Software Foundation, either
+; version 3 of the License, or (at your option) any later version.
+;
+; picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+; See the GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License along with picoFace. If 
+; not, see <https://www.gnu.org/licenses/>.
 
-X4  X3      X2  X1    X0  Y3  Y2  Y1  Y0  GND
-Y4  /CSROM  XE  ROME  O4  O3  O2  O1  O0  VCC
 
+; Pin 1
+A11
+A10
+A9
+A8
+A4
+A3
+A2
+A1
+A0
+GND
 
+;Pin 11
+A12
+/CSROM
+MLE
+ROME
+A4xA12
+A3xA11
+A2xA10
+A1xA9
+A0xA8
+VCC
 
-O0 = X0 * XE + Y0 * /XE
-O1 = X1 * XE + Y1 * /XE
-O2 = X2 * XE + Y2 * /XE
-O3 = X3 * XE + Y3 * /XE
-O4 = X4 * XE + Y4 * /XE
+A0xA8 = A0 * MLE + A8 * /MLE
+A1xA9 = A1 * MLE + A9 * /MLE
+A2xA10 = A2 * MLE + A10 * /MLE
+A3xA11 = A3 * MLE + A11 * /MLE
+A4xA12 = A4 * MLE + A12 * /MLE
 
 /CSROM.T = ROME
 /CSROM.E = ROME

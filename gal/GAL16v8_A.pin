@@ -2,24 +2,24 @@
 
  Pin # | Name     | Pin Type
 -----------------------------
-   1   | X4       | Input
-   2   | X3       | Input
-   3   | X2       | Input
-   4   | X1       | Input
-   5   | X0       | Input
-   6   | Y3       | Input
-   7   | Y2       | Input
-   8   | Y1       | Input
-   9   | Y0       | Input
+   1   | A11      | Input
+   2   | A10      | Input
+   3   | A9       | Input
+   4   | A8       | Input
+   5   | A4       | Input
+   6   | A3       | Input
+   7   | A2       | Input
+   8   | A1       | Input
+   9   | A0       | Input
   10   | GND      | GND
-  11   | Y4       | Input
+  11   | A12      | Input
   12   | /CSROM   | Output
-  13   | XE       | Input
+  13   | MLE      | Input
   14   | ROME     | Input
-  15   | O4       | Output
-  16   | O3       | Output
-  17   | O2       | Output
-  18   | O1       | Output
-  19   | O0       | Output
+  15   | A4xA12   | Output
+  16   | A3xA11   | Output
+  17   | A2xA10   | Output
+  18   | A1xA9    | Output
+  19   | A0xA8    | Output
   20   | VCC      | VCC
 
