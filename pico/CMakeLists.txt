@@ -48,7 +48,7 @@ if (PICO_SDK_VERSION_STRING VERSION_LESS "1.4.0")
   message(FATAL_ERROR "Raspberry Pi Pico SDK version 1.4.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
 endif()
 
-project(picorom C CXX ASM)
+project(picoface C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -66,14 +66,14 @@ add_custom_command(
 
 add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/nmi.h ${CMAKE_CURRENT_BINARY_DIR}/nmi.c
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/asm_to_c_file.py
+        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/asm_to_c_file.py
         DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/nmirom.bin ${CMAKE_CURRENT_BINARY_DIR}/nmirom.sym
 )
 
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(picorom 
+add_executable(picoface 
         picorom.cxx
         #nmi.c
         lz4.c
@@ -85,39 +85,39 @@ add_executable(picorom
         ${CMAKE_CURRENT_BINARY_DIR}/nmi.c
         ${CMAKE_CURRENT_BINARY_DIR}/nmi.h)
 
-pico_set_program_name(picorom "picorom")
-pico_set_program_version(picorom "0.1")
+pico_set_program_name(picoface "picoface")
+pico_set_program_version(picoface "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(picorom ${CMAKE_CURRENT_LIST_DIR}/picorom.pio)
+pico_generate_pio_header(picoface ${CMAKE_CURRENT_LIST_DIR}/picorom.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(picorom 0)
-pico_enable_stdio_usb(picorom 1)
+pico_enable_stdio_uart(picoface 0)
+pico_enable_stdio_usb(picoface 1)
 
 # Add the standard library to the build
-target_link_libraries(picorom
+target_link_libraries(picoface
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(picorom PRIVATE
+target_include_directories(picoface PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}
   ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts or any other standard includes, if required
 )
 
 
 if("${WIFI_ENABLE}")
-        target_compile_definitions(picorom PRIVATE WIFI_ENABLE)
+        target_compile_definitions(picoface PRIVATE WIFI_ENABLE)
 endif()
 
 
-target_compile_definitions(picorom PRIVATE
+target_compile_definitions(picoface PRIVATE
         WIFI_SSID=\"${WIFI_SSID}\"
         WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
         )
 
 # Add any user requested libraries
-target_link_libraries(picorom 
+target_link_libraries(picoface 
         hardware_pio
         pico_multicore
         FatFs_SPI
@@ -125,7 +125,7 @@ target_link_libraries(picorom
         "${WIFI_LIBS}"
         )
 
-target_link_libraries(picorom littlefs-lib)
+target_link_libraries(picoface littlefs-lib)
 
-pico_add_extra_outputs(picorom)
+pico_add_extra_outputs(picoface)
 
