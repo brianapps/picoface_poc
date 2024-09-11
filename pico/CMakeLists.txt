@@ -74,8 +74,7 @@ add_custom_command(
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(picoface 
-        picorom.cxx
-        #nmi.c
+        picoface.cxx
         lz4.c
         http_server.cxx
         usb_command_handler.cxx
@@ -89,7 +88,7 @@ pico_set_program_name(picoface "picoface")
 pico_set_program_version(picoface "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(picoface ${CMAKE_CURRENT_LIST_DIR}/picorom.pio)
+pico_generate_pio_header(picoface ${CMAKE_CURRENT_LIST_DIR}/picoface.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(picoface 0)

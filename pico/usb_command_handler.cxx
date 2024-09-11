@@ -20,7 +20,7 @@ not, see <https://www.gnu.org/licenses/>.
 #include "pico_hal.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdio/driver.h"
-#include "picorom.h"
+#include "picoface.h"
 #include "ff.h"
 #include "hw_config.h"
 #include "file_wrapper.h"

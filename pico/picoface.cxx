@@ -32,7 +32,7 @@ not, see <https://www.gnu.org/licenses/>.
 #include "littlefs-lib/pico_hal.h"
 
 
-#include "picorom.pio.h"
+#include "picoface.pio.h"
 
 #include "f_util.h"
 #include "ff.h"
@@ -41,7 +41,7 @@ not, see <https://www.gnu.org/licenses/>.
 #define LZ4_STATIC_LINKING_ONLY
 #include "lz4.h"
 #include "nmi.h"
-#include "picorom.h"
+#include "picoface.h"
 #include "file_wrapper.h"
 
 extern const uint8_t FGH_ROM[];
