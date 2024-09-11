@@ -8,11 +8,11 @@
 # the GNU General Public License as published by the Free Software Foundation, either
 # version 3 of the License, or (at your option) any later version.
 #
-# picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+# picoFace is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 # without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with picoFace. If 
+# You should have received a copy of the GNU General Public License along with picoFace. If
 # not, see <https://www.gnu.org/licenses/>.
 
 
@@ -25,44 +25,42 @@ import time
 import convertZ80
 
 
+STX = b"\x02"
+ETX = b"\x03"
 
-STX = b'\x02'
-ETX = b'\x03'
-
-COMMAND_START = b'\x04'
-COMMAND_END = b'\x05'
-COMMAND_RESPONSE_BEGIN = b'\x06'
-COMMAND_RECEIVE_DATA = b'\x07'
-COMMAND_SEND_DATA = b'\x08'
-COMMAND_SUCCESS = b'\x09'
-COMMAND_FAILURE = b'\x10'
-COMMAND_RESPONSE_END = b'\x11'
-START_OF_DATA = b'\x14'
-START_OF_PACKET = b'\x15'
-END_OF_DATA = b'\x16'
-ACK = b'\x17'
-NAK = b'\x18'
+COMMAND_START = b"\x04"
+COMMAND_END = b"\x05"
+COMMAND_RESPONSE_BEGIN = b"\x06"
+COMMAND_RECEIVE_DATA = b"\x07"
+COMMAND_SEND_DATA = b"\x08"
+COMMAND_SUCCESS = b"\x09"
+COMMAND_FAILURE = b"\x10"
+COMMAND_RESPONSE_END = b"\x11"
+START_OF_DATA = b"\x14"
+START_OF_PACKET = b"\x15"
+END_OF_DATA = b"\x16"
+ACK = b"\x17"
+NAK = b"\x18"
 
 
 PACKET_SIZE = 8192 * 3
 
 
 def send_data(ser, bytesToSend):
-       
-    header =  struct.pack(">BL", START_OF_DATA[0], len(bytesToSend))
+
+    header = struct.pack(">BL", START_OF_DATA[0], len(bytesToSend))
     ser.write(header)
     if (resp := ser.read(1)) != ACK:
         print(f"Expecting ACK but didn't get it. Got {resp} instead.")
         return
-    
+
     sentSoFar = 0
     while sentSoFar < len(bytesToSend):
         packetSize = min(len(bytesToSend) - sentSoFar, PACKET_SIZE)
         ser.write(struct.pack(">BH", START_OF_PACKET[0], packetSize))
-        packetBytes = bytesToSend[sentSoFar:sentSoFar+packetSize]
+        packetBytes = bytesToSend[sentSoFar : sentSoFar + packetSize]
         ser.write(packetBytes)
 
-        
         if ser.read(1) != ACK:
             print("Expecting ACK but didn't get it")
             return
@@ -73,7 +71,7 @@ def send_data(ser, bytesToSend):
     if ser.read(1) != ACK:
         print("Expecting ACK from server but didn't get it")
         return
-            
+
 
 def receive_data(ser):
     data = bytes()
@@ -84,9 +82,8 @@ def receive_data(ser):
         ser.write(NAK)
         return
 
-    total_size = struct.unpack(">L", header[1:] )[0]
+    total_size = struct.unpack(">L", header[1:])[0]
     ser.write(ACK)
-
 
     while True:
         packettype = ser.read(1)
@@ -105,17 +102,19 @@ def receive_data(ser):
         else:
             ser.write(NAK)
             print(f"Didn't get a START_OF_PACK or END_OF_DATA {packettype}")
-            return data            
+            return data
 
 
 def send_command(port, command_text, input_data, output_file):
+    # Because with are using the ACM device there is no need to specify the
+    # baud rate or other serial parameters. The device will send and
+    # receive data as fast as USB or the pico allows.
     with serial.Serial(port, timeout=2) as ser:
         recv = ser.read_all()
         while len(recv) != 0:
             recv = ser.read_all()
 
-        ser.write(COMMAND_START + command_text.encode('ascii') + COMMAND_END)
-
+        ser.write(COMMAND_START + command_text.encode("ascii") + COMMAND_END)
 
         while True:
             status = ser.read(1)
@@ -125,7 +124,6 @@ def send_command(port, command_text, input_data, output_file):
 
             if status == COMMAND_RESPONSE_BEGIN:
                 break
-
 
         succeeded = False
 
@@ -140,12 +138,12 @@ def send_command(port, command_text, input_data, output_file):
             elif status == COMMAND_SEND_DATA:
                 data = receive_data(ser)
                 if output_file is None:
-                    print(data.decode('ascii',errors='ignore'))
+                    print(data.decode("ascii", errors="ignore"))
                 elif isinstance(output_file, str):
                     with open(output_file, "wb") as fp:
                         fp.write(data)
                 else:
-                     output_file.write(data)   
+                    output_file.write(data)
             elif status == COMMAND_SUCCESS:
                 succeeded = True
                 break
@@ -155,7 +153,6 @@ def send_command(port, command_text, input_data, output_file):
             else:
                 print(status)
 
-
         message_bytes = bytearray()
 
         while True:
@@ -163,42 +160,50 @@ def send_command(port, command_text, input_data, output_file):
             if len(status) == 0:
                 print("Timed out")
                 return
-            
+
             if status == COMMAND_RESPONSE_END:
                 if len(message_bytes) > 0:
-                    print(message_bytes.decode('ascii', errors='ignore'))
+                    print(message_bytes.decode("ascii", errors="ignore"))
                 return
             else:
                 message_bytes.extend(status)
-                
-            
+
+
 def compress_data(input_data: bytes) -> bytes:
-    return lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)
+    return lz4.block.compress(
+        input_data, mode="high_compression", store_size=False, compression=12
+    )
+
 
 def default_port() -> str:
+    # Try and pick out the USB port that matches the pico
     for p in serial.tools.list_ports.comports():
         if p.vid == 0x2E8A and p.pid == 0x0A:
             return p.device
+    # Otherwise use something that normally works for Linux
     return "/dev/ttyACM0"
-        
-def escape_param(param : str) -> str:
+
+
+def escape_param(param: str) -> str:
     return param.replace(" ", "\\ ")
 
 
 def join_params(params: list[str]):
-    return ' '.join(x.replace(" ", "\\ ") for x in params)
+    return " ".join(x.replace(" ", "\\ ") for x in params)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = 'send commands to pico board over serial usb'
+        description="send commands to pico board over serial usb"
     )
 
-    parser.add_argument('-p', '--port', default=default_port())
-    parser.add_argument('-i', '--input', help='input file')
-    parser.add_argument('-z', '--compress', help='compress the input', action='store_const', const=True)
-    parser.add_argument('-o', '--output', help='output file')
-    parser.add_argument('cmdparams', nargs='+')
+    parser.add_argument("-p", "--port", default=default_port())
+    parser.add_argument("-i", "--input", help="input file")
+    parser.add_argument(
+        "-z", "--compress", help="compress the input", action="store_const", const=True
+    )
+    parser.add_argument("-o", "--output", help="output file")
+    parser.add_argument("cmdparams", nargs="+")
 
     args = parser.parse_args()
 
@@ -211,10 +216,11 @@ if __name__ == "__main__":
             snapshot.process_file(args.input)
             input_data = snapshot.to_bytes()
         else:
-            with open(args.input, 'rb') as fp:
+            with open(args.input, "rb") as fp:
                 input_data = fp.read()
         if args.compress:
-            input_data = lz4.block.compress(input_data, mode='high_compression', store_size=False, compression=12)
+            input_data = lz4.block.compress(
+                input_data, mode="high_compression", store_size=False, compression=12
+            )
 
     send_command(args.port, join_params(args.cmdparams), input_data, args.output)
-

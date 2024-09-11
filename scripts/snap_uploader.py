@@ -30,8 +30,9 @@ layout = QVBoxLayout(window)
 
 list_view = QListWidget()
 for zi in snapzips.filelist:
-    lwi = QListWidgetItem(zi.filename)
-    list_view.addItem(lwi)
+    if zi.filename.endswith(".z80"):
+        lwi = QListWidgetItem(zi.filename)
+        list_view.addItem(lwi)
 
 def myclick(itm : QListWidgetItem):
     with snapzips.open(itm.text()) as fp:

@@ -43,8 +43,8 @@ def convert_z80_files(source_zip : zipfile.ZipFile, dest_zip: zipfile.ZipFile):
                     dest_zip.writestr(f.name, snapshot.to_bytes())
                 except:
                     print(f"Can't convert: {zipinfo.filename}")
-            # elif f.suffix.lower() == '.pok':
-            #     dest_zip.writestr(f.name, source_zip.read(zipinfo))
+            elif f.suffix.lower() == '.pok':
+                dest_zip.writestr(f.name, source_zip.read(zipinfo))
 
 download_dir = Path.home() / "Downloads" / "zx_spectrum_tosec_set_september_2023"
 destzip = zipfile.ZipFile('snaps.zip', 'a', compression=zipfile.ZIP_DEFLATED)
